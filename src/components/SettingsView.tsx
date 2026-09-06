@@ -1,0 +1,317 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import {
+  FolderOpen,
+  Keyboard,
+  MonitorCog,
+  ShieldCheck,
+  X,
+} from "lucide-react";
+
+import { usePocket } from "@/store";
+import { api } from "@/lib/api";
+import { acceleratorFromEvent, shortcutLabel } from "@/lib/shortcut";
+import { formatBytes, cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { StorageInfo } from "@/types";
+
+export function SettingsView() {
+  const { settings, setSettings } = usePocket();
+  const [storage, setStorage] = useState<StorageInfo | null>(null);
+
+  useEffect(() => {
+    void api.getStorageInfo().then(setStorage).catch(() => {});
+  }, []);
+
+  if (!settings) return null;
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-8 p-6 pb-16">
+      <Section icon={<MonitorCog className="size-4" />} title="General">
+        <Row label="Launch on startup" hint="Start Pocket automatically when you sign in.">
+          <Switch
+            checked={settings.launchOnStartup}
+            onCheckedChange={(v) => void setSettings({ launchOnStartup: v })}
+            aria-label="Launch on startup"
+          />
+        </Row>
+        <Row label="Start minimized" hint="Hide the main window on launch; Pocket lives in the tray.">
+          <Switch
+            checked={settings.startMinimized}
+            onCheckedChange={(v) => void setSettings({ startMinimized: v })}
+            aria-label="Start minimized"
+          />
+        </Row>
+        <Row label="Close to system tray" hint="Closing the window keeps Pocket running in the tray.">
+          <Switch
+            checked={settings.closeToTray}
+            onCheckedChange={(v) => void setSettings({ closeToTray: v })}
+            aria-label="Close to system tray"
+          />
+        </Row>
+        <Row label="Theme">
+          <Select value={settings.theme} onValueChange={(v) => void setSettings({ theme: v as never })}>
+            <SelectTrigger className="w-32" aria-label="Theme">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="system">System</SelectItem>
+              <SelectItem value="light">Light</SelectItem>
+              <SelectItem value="dark">Dark</SelectItem>
+            </SelectContent>
+          </Select>
+        </Row>
+      </Section>
+
+      <Section icon={<Keyboard className="size-4" />} title="Shortcuts">
+        <Row
+          label="Quick capture"
+          hint="Global. Opens the capture bar from anywhere."
+        >
+          <div className="flex items-center gap-2">
+            <Select
+              value={settings.quickCaptureShortcut === "DoubleShift" ? "DoubleShift" : "custom"}
+              onValueChange={(v) => {
+                if (v === "DoubleShift") {
+                  void api
+                    .setShortcut("quickCapture", "DoubleShift")
+                    .then(() => { toast.success("Quick capture shortcut updated"); })
+                    .catch((e) => { toast.error(String(e)); });
+                }
+              }}
+            >
+              <SelectTrigger className="w-32" aria-label="Shortcut mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="DoubleShift">Double Shift</SelectItem>
+                <SelectItem value="custom">Custom…</SelectItem>
+              </SelectContent>
+            </Select>
+            {settings.quickCaptureShortcut !== "DoubleShift" && (
+              <ShortcutInput
+                value={settings.quickCaptureShortcut}
+                onSave={(accel) =>
+                  api
+                    .setShortcut("quickCapture", accel)
+                    .then(() => { toast.success("Quick capture shortcut updated"); })
+                    .catch((e) => { toast.error(String(e)); })
+                }
+              />
+            )}
+          </div>
+        </Row>
+        <Row label="Voice recording" hint="Optional. Opens the capture bar in voice mode.">
+          {settings.voiceShortcut ? (
+            <div className="flex items-center gap-2">
+              <ShortcutInput
+                value={settings.voiceShortcut}
+                onSave={(accel) =>
+                  api
+                    .setShortcut("voice", accel)
+                    .then(() => { toast.success("Voice shortcut updated"); })
+                    .catch((e) => { toast.error(String(e)); })
+                }
+              />
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label="Unassign voice shortcut"
+                onClick={() =>
+                  void api
+                    .setShortcut("voice", null)
+                    .then(() => { toast.success("Voice shortcut unassigned"); })
+                    .catch((e) => { toast.error(String(e)); })
+                }
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+          ) : (
+            <ShortcutInput
+              value={null}
+              placeholder="Unassigned — click to set"
+              onSave={(accel) =>
+                api
+                  .setShortcut("voice", accel)
+                  .then(() => { toast.success("Voice shortcut updated"); })
+                  .catch((e) => { toast.error(String(e)); })
+              }
+            />
+          )}
+        </Row>
+        <Row
+          label="Gaming mode"
+          hint="Detects fullscreen games and automatically disables all global shortcuts."
+        >
+          <Switch
+            checked={settings.gamingDetectionEnabled}
+            onCheckedChange={(v) => void setSettings({ gamingDetectionEnabled: v })}
+            aria-label="Gaming mode detection"
+          />
+        </Row>
+      </Section>
+
+      <Section icon={<ShieldCheck className="size-4" />} title="Privacy & Storage">
+        <div className="rounded-lg border bg-card p-4">
+          <ul className="space-y-1.5 text-[13px] text-muted-foreground">
+            <li>· Pocket has no account, no cloud and no telemetry.</li>
+            <li>· Everything — notes, prompts, tasks, links and voice recordings — is stored on this machine only.</li>
+            <li>· Voice recordings are never uploaded anywhere.</li>
+          </ul>
+          <Separator className="my-3" />
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="text-[13px] font-medium">Storage location</p>
+                {storage?.usesFallbackLocation && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    install folder not writable — using app data
+                  </Badge>
+                )}
+              </div>
+              <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                {storage?.dataDir ?? "…"}
+              </p>
+              {storage && (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Total size: {formatBytes(storage.sizeBytes)}
+                </p>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              className="shrink-0"
+              onClick={() => void api.openDataFolder().catch((e) => { toast.error(String(e)); })}
+            >
+              <FolderOpen className="size-4" /> Open folder
+            </Button>
+          </div>
+        </div>
+      </Section>
+
+      <Section icon={<Keyboard className="size-4" />} title="Keyboard tips">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border bg-card p-4 text-[13px] text-muted-foreground">
+          <Tip keys={<Kbd>Ctrl K</Kbd>} text="Search this workspace" />
+          <Tip keys={<Kbd>Ctrl N</Kbd>} text="Open quick capture" />
+          <Tip keys={<span>Double <Kbd>Shift</Kbd></span>} text="Quick capture (default global)" />
+          <Tip keys={<Kbd>Enter</Kbd>} text="Save / copy selection" />
+          <Tip keys={<Kbd>C</Kbd>} text="Copy focused item" />
+          <Tip keys={<Kbd>X</Kbd>} text="Complete focused task or prompt" />
+          <Tip keys={<Kbd>E</Kbd>} text="Edit focused item" />
+          <Tip keys={<Kbd>Del</Kbd>} text="Delete focused item" />
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function Section({
+  icon,
+  title,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-muted-foreground">{icon}</span>
+        <h2 className="text-sm font-semibold">{title}</h2>
+      </div>
+      <div className="space-y-1">{children}</div>
+    </section>
+  );
+}
+
+function Row({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-6 rounded-lg px-1 py-2.5">
+      <div>
+        <Label className="text-[13px]">{label}</Label>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function Tip({ keys, text }: { keys: React.ReactNode; text: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="shrink-0">{keys}</span>
+      <span className="truncate">{text}</span>
+    </div>
+  );
+}
+
+function ShortcutInput({
+  value,
+  onSave,
+  placeholder,
+}: {
+  value: string | null;
+  onSave: (accel: string) => Promise<void>;
+  placeholder?: string;
+}) {
+  const [capturing, setCapturing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        setCapturing(false);
+        return;
+      }
+      if (e.key === "Enter") {
+        setCapturing(false);
+        return;
+      }
+      const accel = acceleratorFromEvent(e);
+      if (!accel) return;
+      setCapturing(false);
+      void onSave(accel).catch(() => {});
+    },
+    [onSave]
+  );
+
+  return (
+    <Input
+      ref={inputRef}
+      readOnly
+      value={capturing ? "Press keys…" : shortcutLabel(value)}
+      placeholder={placeholder}
+      aria-label="Shortcut"
+      className={cn("w-44 cursor-pointer text-center font-mono text-xs", capturing && "ring-2 ring-ring")}
+      onKeyDown={onKeyDown}
+      onFocus={() => setCapturing(true)}
+      onBlur={() => setCapturing(false)}
+      onClick={() => inputRef.current?.focus()}
+    />
+  );
+}

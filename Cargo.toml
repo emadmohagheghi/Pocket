@@ -1,6 +1,0 @@
-[package]
-name = "Pocket"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
