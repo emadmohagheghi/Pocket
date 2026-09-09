@@ -389,7 +389,7 @@ function ShortcutInput({
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[75vh] overflow-y-auto sm:max-w-md">
+      <DialogContent className="top-auto bottom-[4.75rem] translate-y-0 max-h-[68vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>

@@ -182,7 +182,7 @@ export function ItemRow({ item, focused }: Props) {
                 ref={previewRef}
                 aria-hidden={expanded}
                 className={cn(
-                  "col-start-1 row-start-1 line-clamp-2 self-start whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere] transition-opacity duration-150",
+                  "col-start-1 row-start-1 line-clamp-2 select-text self-start whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere] transition-opacity duration-150",
                   expanded && "pointer-events-none opacity-0",
                   isLink && "cursor-pointer text-primary underline-offset-2 hover:underline"
                 )}
@@ -214,7 +214,7 @@ export function ItemRow({ item, focused }: Props) {
                 ) : (
                   <p
                     className={cn(
-                      "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
+                      "select-text whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
                       isLink && "cursor-pointer text-primary underline-offset-2 hover:underline"
                     )}
                   >
@@ -245,7 +245,7 @@ export function ItemRow({ item, focused }: Props) {
           <p
             ref={previewRef}
             className={cn(
-              "line-clamp-2 whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
+              "line-clamp-2 select-text whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
               isLink && "text-primary underline-offset-2"
             )}
           >

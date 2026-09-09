@@ -147,6 +147,18 @@
   scrollbar-width: thin;
   scrollbar-color: var(--muted) transparent;
 }
+
+/* App chrome is not text-selectable — only note content (select-text on the
+   item paragraphs) and text fields are. */
+html {
+  user-select: none;
+  -webkit-user-select: none;
+}
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
