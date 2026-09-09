@@ -38,6 +38,10 @@ pub const DOUBLE_SHIFT: &str = "DoubleShift";
 #[serde(rename_all = "camelCase")]
 pub struct CaptureOpenPayload {
     pub mode: String,
+    /// Text auto-grabbed from the foreground app's selection (if any).
+    /// `None` means "open empty" — never stale clipboard content.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 /// Show the quick-capture window (or hide it if it is already visible).
@@ -67,6 +71,10 @@ pub fn show_voice_capture(app: &AppHandle) {
 }
 
 fn show_capture(app: &AppHandle, mode: &str) {
+    show_capture_with_text(app, mode, None);
+}
+
+fn show_capture_with_text(app: &AppHandle, mode: &str, text: Option<String>) {
     let Some(win) = app.get_webview_window("quick-capture") else {
         eprintln!("[pocket] quick-capture window not found!");
         return;
@@ -75,13 +83,260 @@ fn show_capture(app: &AppHandle, mode: &str) {
     let shown = win.show();
     let focused = win.set_focus();
     debug_log(&format!(
-        "show_capture(mode={mode}) show={shown:?} focus={focused:?}"
+        "show_capture(mode={mode}) show={shown:?} focus={focused:?} prefill_len={}",
+        text.as_ref().map(|t| t.len()).unwrap_or(0)
     ));
     let _ = app.emit_to(
         "quick-capture",
         "capture-open",
-        CaptureOpenPayload { mode: mode.into() },
+        CaptureOpenPayload { mode: mode.into(), text },
     );
+}
+
+/// Double-Shift path: like `toggle_quick_capture`, but first auto-grabs the
+/// foreground app's selected text (if any) on a worker thread so neither the
+/// hook callback nor the UI thread ever blocks.
+pub fn show_text_capture_from_hotkey(app: &AppHandle) {
+    let visible = app
+        .get_webview_window("quick-capture")
+        .map(|w| w.is_visible().unwrap_or(false))
+        .unwrap_or(false);
+    if visible {
+        debug_log("capture window visible -> hiding");
+        if let Some(win) = app.get_webview_window("quick-capture") {
+            let _ = win.hide();
+        }
+        return;
+    }
+    let app_handle = app.clone();
+    std::thread::Builder::new()
+        .name("grab-selection".into())
+        .spawn(move || {
+            grab_log("grab: worker started (double-shift trigger)");
+            let grabbed = grab_selected_text();
+            let for_closure = app_handle.clone();
+            let _ = app_handle.run_on_main_thread(move || {
+                show_capture_with_text(&for_closure, "text", grabbed);
+            });
+        })
+        .ok();
+}
+
+/// General diagnostics file log (same mechanism as the grab log): release GUI
+/// builds drop stderr, so anything needed as evidence goes here.
+/// Lives next to the executable as `pocket-diag.log`.
+pub(crate) fn diag_log(message: &str) {
+    use std::io::Write;
+    let path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(std::env::temp_dir)
+        .join("pocket-diag.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let _ = writeln!(f, "[{}] {message}", now_ms());
+    }
+    debug_log(message);
+}
+
+/// File log for the grab flow (release GUI builds drop stderr, so eprintln
+/// alone is invisible there). Lives next to the executable as
+/// `pocket-grab.log` — the data directory beside the exe is proven writable,
+/// unlike %TEMP% which this process demonstrably cannot create files in.
+fn grab_log_path() -> std::path::PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(std::env::temp_dir)
+        .join("pocket-grab.log")
+}
+
+fn grab_log(message: &str) {
+    use std::io::Write;
+    let path = grab_log_path();
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        Ok(mut f) => {
+            let _ = writeln!(f, "[{}] {message}", now_ms());
+        }
+        Err(e) => {
+            eprintln!("[pocket] grab_log failed ({}): {e}", path.display());
+        }
+    }
+    debug_log(message);
+}
+
+/// Snapshot → synthetic Ctrl+C → compare. Returns the newly selected text, or
+/// `None` when nothing was selected (clipboard unchanged/empty).
+#[cfg(windows)]
+fn grab_selected_text() -> Option<String> {
+    // The user's fingers may still hold Shift: wait (bounded) for physical
+    // release first, otherwise we'd send Ctrl+Shift+C instead of Ctrl+C.
+    let mut waited_ms: u64 = 0;
+    loop {
+        let down = unsafe {
+            use windows::Win32::UI::Input::KeyboardAndMouse::{
+                GetAsyncKeyState, VK_LSHIFT, VK_RSHIFT,
+            };
+            let l = GetAsyncKeyState(VK_LSHIFT.0 as i32) as u16;
+            let r = GetAsyncKeyState(VK_RSHIFT.0 as i32) as u16;
+            (l & 0x8000) != 0 || (r & 0x8000) != 0
+        };
+        if !down || waited_ms >= 300 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        waited_ms += 10;
+    }
+    grab_log(&format!("grab: shift released after {waited_ms}ms"));
+
+    // Wipe first: with the old content gone, anything we read afterwards
+    // must be fresh output of THIS action — stale content can never leak
+    // into the bar. (Overwriting the clipboard is accepted behavior.)
+    clear_clipboard();
+    grab_log("grab: clipboard cleared (sentinel)");
+
+    if !send_ctrl_c() {
+        grab_log("grab: SendInput(Ctrl+C) failed -> opening empty");
+        return None;
+    }
+    grab_log("grab: synthetic Ctrl+C sent via SendInput");
+
+    // The target app needs a moment to service the copy.
+    std::thread::sleep(std::time::Duration::from_millis(150));
+
+    let after = read_clipboard_text();
+    match after {
+        Some(t) if !t.trim().is_empty() => {
+            let preview: String = t.chars().take(80).collect();
+            let preview = preview.replace(['\r', '\n'], " ");
+            grab_log(&format!(
+                "grab: clipboard FRESH len={} preview='{preview}' -> pre-filling",
+                t.len()
+            ));
+            Some(t)
+        }
+        _ => {
+            grab_log("grab: clipboard still empty (nothing selected) -> opening empty");
+            None
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn grab_selected_text() -> Option<String> {
+    None
+}
+
+/// Empties the clipboard (best effort). Called before the synthetic Ctrl+C so
+/// a later read can only ever see fresh output of this action.
+#[cfg(windows)]
+fn clear_clipboard() {
+    use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard};
+
+    unsafe {
+        for _ in 0..5 {
+            if OpenClipboard(None).is_ok() {
+                let _ = EmptyClipboard();
+                let _ = CloseClipboard();
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+}
+
+/// Current clipboard Unicode text, if any. Retries briefly — the clipboard is
+/// often momentarily locked by the app that owns it.
+#[cfg(windows)]
+fn read_clipboard_text() -> Option<String> {    use windows::Win32::Foundation::HGLOBAL;
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+    };
+    use windows::Win32::System::Memory::{GlobalLock, GlobalUnlock};
+
+    /// CF_UNICODETEXT (13). The `windows` 0.61 metadata exposes
+    /// `GetClipboardData` as taking a plain u32, so spell it out.
+    const CF_UNICODETEXT: u32 = 13;
+
+    let mut opened = false;
+    for _ in 0..5 {
+        if unsafe { OpenClipboard(None) }.is_ok() {
+            opened = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    if !opened {
+        return None;
+    }
+
+    let result = unsafe {
+        if IsClipboardFormatAvailable(CF_UNICODETEXT).is_err() {
+            None
+        } else {
+            match GetClipboardData(CF_UNICODETEXT) {
+                Ok(h) if !h.0.is_null() => {
+                    let ptr = GlobalLock(HGLOBAL(h.0)) as *const u16;
+                    if ptr.is_null() {
+                        None
+                    } else {
+                        let mut len = 0usize;
+                        while len < 1_000_000 && *ptr.add(len) != 0 {
+                            len += 1;
+                        }
+                        let slice = std::slice::from_raw_parts(ptr, len);
+                        let s = String::from_utf16_lossy(slice);
+                        let _ = GlobalUnlock(HGLOBAL(h.0));
+                        Some(s)
+                    }
+                }
+                _ => None,
+            }
+        }
+    };
+    let _ = unsafe { CloseClipboard() };
+    result
+}
+
+/// Synthesizes a Ctrl+C keystroke into the foreground app.
+#[cfg(windows)]
+fn send_ctrl_c() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+        SendInput, VIRTUAL_KEY, VK_C, VK_CONTROL,
+    };
+
+    let key = |vk: VIRTUAL_KEY, up: bool| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: 0,
+                dwFlags: if up {
+                    KEYEVENTF_KEYUP
+                } else {
+                    KEYBD_EVENT_FLAGS(0)
+                },
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    let inputs = [
+        key(VK_CONTROL, false),
+        key(VK_C, false),
+        key(VK_C, true),
+        key(VK_CONTROL, true),
+    ];
+    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    sent == inputs.len() as u32
 }
 
 pub fn debug_log(message: &str) {
@@ -188,8 +443,8 @@ pub mod double_shift {
     use windows::Win32::UI::Input::KeyboardAndMouse::{VK_LSHIFT, VK_RSHIFT, VK_SHIFT};
     use windows::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, GetMessageW, PostThreadMessageW, SetWindowsHookExW, HC_ACTION, HHOOK,
-        KBDLLHOOKSTRUCT, KBDLLHOOKSTRUCT_FLAGS, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_QUIT,
-        WM_SYSKEYDOWN,
+        KBDLLHOOKSTRUCT, KBDLLHOOKSTRUCT_FLAGS, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP,
+        WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
     };
 
     const LLKHF_INJECTED: KBDLLHOOKSTRUCT_FLAGS = KBDLLHOOKSTRUCT_FLAGS(0x10);
@@ -223,6 +478,12 @@ pub mod double_shift {
         app: AppHandle,
         last_shift_down_ms: u64,
         intervening_key: bool,
+        /// True once Shift has been released since the previous Shift press.
+        /// Starts true so the very first press can still begin a pair.
+        /// Auto-repeat keydowns arrive with NO intervening key-up, so they
+        /// can never look like a second press — this is what makes holding
+        /// Shift safe regardless of repeat timing jitter.
+        released_since_down: bool,
     }
 
     thread_local! {
@@ -257,6 +518,7 @@ pub mod double_shift {
                 app,
                 last_shift_down_ms: 0,
                 intervening_key: false,
+                released_since_down: true,
             });
         });
         HOOK_DEBUG.store(debug_enabled(), Ordering::Relaxed);
@@ -294,7 +556,10 @@ pub mod double_shift {
             }
             let _ = windows::Win32::UI::WindowsAndMessaging::UnhookWindowsHookEx(hhook);
             debug_log("keyboard hook cycle ended; reinstalling");
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            // Keep this gap tiny: keystrokes landing inside it are invisible
+            // to the double-shift detector (a 100ms blind window missed
+            // roughly 1 in 250 double-shifts).
+            std::thread::sleep(std::time::Duration::from_millis(20));
         }
     }
 
@@ -327,9 +592,10 @@ pub mod double_shift {
     }
 
     unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        if code as u32 == HC_ACTION
-            && (wparam.0 as u32 == WM_KEYDOWN || wparam.0 as u32 == WM_SYSKEYDOWN)
-        {
+        let msg = wparam.0 as u32;
+        let is_keydown = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+        let is_keyup = msg == WM_KEYUP || msg == WM_SYSKEYUP;
+        if code as u32 == HC_ACTION && (is_keydown || is_keyup) {
             let kb = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
             LAST_EVENT_MS.store(now_ms(), Ordering::Relaxed);
             // Ignore injected input (games / automation) unless E2E testing.
@@ -343,8 +609,10 @@ pub mod double_shift {
                 // Rare enough to be safe for diagnostics; proves whether the
                 // callback sees shift events at all.
                 hook_file_log(&format!(
-                    "shift vk=0x{:02X} injected={}",
-                    kb.vkCode, injected
+                    "shift vk=0x{:02X} {} injected={}",
+                    kb.vkCode,
+                    if is_keydown { "down" } else { "up" },
+                    injected
                 ));
             }
             if !injected || e2e_keys_enabled() {
@@ -356,7 +624,7 @@ pub mod double_shift {
                 }
                 STATE.with(|s| {
                     if let Some(state) = s.borrow_mut().as_mut() {
-                        handle_key(state, is_shift);
+                        handle_key(state, is_shift, is_keydown);
                     }
                 });
             }
@@ -364,31 +632,61 @@ pub mod double_shift {
         CallNextHookEx(None, code, wparam, lparam)
     }
 
-    fn handle_key(state: &mut HookState, is_shift: bool) {
+    /// Pure double-press decision, unit-tested below. A press only counts when
+    /// a Shift *release* happened since the previous press — auto-repeat
+    /// keydowns (held key, no releases) can never satisfy this.
+    fn is_double_press(
+        last_down_ms: u64,
+        now_ms: u64,
+        intervening: bool,
+        released_since_down: bool,
+    ) -> bool {
+        released_since_down
+            && last_down_ms > 0
+            && !intervening
+            && now_ms.saturating_sub(last_down_ms) >= REPEAT_GUARD_MS
+            && now_ms.saturating_sub(last_down_ms) <= DOUBLE_SHIFT_WINDOW_MS
+    }
+
+    fn handle_key(state: &mut HookState, is_shift: bool, is_keydown: bool) {
         if !is_shift {
-            state.intervening_key = true;
+            if is_keydown {
+                state.intervening_key = true;
+            }
+            return;
+        }
+        if !is_keydown {
+            // Shift released: the next press is a genuinely new press.
+            state.released_since_down = true;
+            return;
+        }
+        if !state.released_since_down {
+            // Shift is being held down (OS auto-repeat): not a new press.
+            if HOOK_DEBUG.load(Ordering::Relaxed) {
+                eprintln!("[pocket:hook] shift repeat ignored (held, no release yet)");
+            }
             return;
         }
         let ms = now_ms();
         let elapsed = ms.saturating_sub(state.last_shift_down_ms);
-        // Auto-repeat guard: real repeats come in much faster than a human
-        // double-tap and must not count as a second press.
-        if elapsed >= REPEAT_GUARD_MS {
-            let double_shift = elapsed <= DOUBLE_SHIFT_WINDOW_MS
-                && !state.intervening_key
-                && state.last_shift_down_ms > 0;
-            if HOOK_DEBUG.load(Ordering::Relaxed) {
-                eprintln!(
-                    "[pocket:hook] shift down elapsed={elapsed}ms window_open={} intervening={}",
-                    elapsed <= DOUBLE_SHIFT_WINDOW_MS, state.intervening_key
-                );
-            }
-            if double_shift {
-                try_trigger(&state.app);
-            }
-            state.last_shift_down_ms = ms;
-            state.intervening_key = false;
+        let double_shift = is_double_press(
+            state.last_shift_down_ms,
+            ms,
+            state.intervening_key,
+            state.released_since_down,
+        );
+        if HOOK_DEBUG.load(Ordering::Relaxed) {
+            eprintln!(
+                "[pocket:hook] shift down elapsed={elapsed}ms window_open={} intervening={}",
+                elapsed <= DOUBLE_SHIFT_WINDOW_MS, state.intervening_key
+            );
         }
+        if double_shift {
+            try_trigger(&state.app);
+        }
+        state.last_shift_down_ms = ms;
+        state.intervening_key = false;
+        state.released_since_down = false;
     }
 
     fn try_trigger(app: &AppHandle) {
@@ -412,8 +710,42 @@ pub mod double_shift {
         // (a slow callback gets the hook removed by the system).
         let app_handle = app.clone();
         let _ = app.run_on_main_thread(move || {
-            toggle_quick_capture(&app_handle);
+            super::show_text_capture_from_hotkey(&app_handle);
         });
+    }
+
+    #[cfg(test)]
+    mod hook_tests {
+        use super::{is_double_press, DOUBLE_SHIFT_WINDOW_MS, REPEAT_GUARD_MS};
+
+        #[test]
+        fn two_quick_distinct_presses_trigger() {
+            // Second press 150ms after the first, with a release in between.
+            assert!(is_double_press(1000, 1150, false, true));
+        }
+
+        #[test]
+        fn held_shift_repeat_never_triggers() {
+            // Same timing, but no release happened between presses.
+            assert!(!is_double_press(1000, 1150, false, false));
+            // Even far apart in time, without a release it must not fire.
+            assert!(!is_double_press(1000, 1000 + DOUBLE_SHIFT_WINDOW_MS, false, false));
+        }
+
+        #[test]
+        fn too_slow_or_first_press_does_not_trigger() {
+            // Outside the double-tap window.
+            assert!(!is_double_press(1000, 1000 + DOUBLE_SHIFT_WINDOW_MS + 1, false, true));
+            // Faster than humanly possible (repeat guard).
+            assert!(!is_double_press(1000, 1000 + REPEAT_GUARD_MS - 1, false, true));
+            // First press ever.
+            assert!(!is_double_press(0, 1150, false, true));
+        }
+
+        #[test]
+        fn intervening_key_cancels_the_pair() {
+            assert!(!is_double_press(1000, 1150, true, true));
+        }
     }
 }
 

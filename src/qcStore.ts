@@ -28,7 +28,9 @@ export const useQc = create<QcStore>((set) => ({
 
 let wired = false;
 
-export function useQcEvents(onCaptureOpen: (mode: "text" | "voice") => void) {
+export function useQcEvents(
+  onCaptureOpen: (mode: "text" | "voice", prefill: string | null) => void
+) {
   useEffect(() => {
     if (!wired) {
       wired = true;
@@ -38,10 +40,16 @@ export function useQcEvents(onCaptureOpen: (mode: "text" | "voice") => void) {
       );
     }
     void useQc.getState().load();
-    const unlistenP = listen<{ mode: "text" | "voice" }>("capture-open", (e) => {
-      void api.log(`QC received capture-open mode=${e.payload.mode}`);
-      onCaptureOpen(e.payload.mode);
-    });
+    const unlistenP = listen<{ mode: "text" | "voice"; text?: string | null }>(
+      "capture-open",
+      (e) => {
+        const prefill = e.payload.text ?? null;
+        void api.log(
+          `QC received capture-open mode=${e.payload.mode} prefill_len=${prefill?.length ?? 0}`
+        );
+        onCaptureOpen(e.payload.mode, prefill);
+      }
+    );
     return () => {
       void unlistenP.then((f) => f());
     };

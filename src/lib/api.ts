@@ -38,17 +38,13 @@ export const api = {
     workspaceId: string,
     itemId: string,
     patch: {
-      itemType?: ItemType;
       content?: string;
       title?: string | null;
       url?: string | null;
-      completed?: boolean;
     }
   ) => invoke<Item>("update_item", { workspaceId, itemId, patch }),
   deleteItem: (workspaceId: string, itemId: string) =>
     invoke<void>("delete_item", { workspaceId, itemId }),
-  moveItem: (workspaceId: string, itemId: string, beforeId: string | null) =>
-    invoke<void>("move_item", { workspaceId, itemId, beforeId }),
 
   search: (workspaceId: string, query: string) =>
     invoke<SearchHit[]>("search", { workspaceId, query }),

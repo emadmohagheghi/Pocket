@@ -1,26 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+/// The only persisted item kind: plain text. Voice notes are separate
+/// `Recording` entities, not items. Kept as an enum (with a single variant)
+/// so the wire format stays stable if kinds are ever added back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ItemType {
-    Note,
-    Prompt,
-    Task,
-    Link,
     Text,
-}
-
-impl ItemType {
-    #[allow(dead_code)]
-    pub fn all() -> [ItemType; 5] {
-        [
-            ItemType::Text,
-            ItemType::Note,
-            ItemType::Prompt,
-            ItemType::Task,
-            ItemType::Link,
-        ]
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,7 +17,6 @@ pub struct Item {
     pub content: String,
     pub title: Option<String>,
     pub url: Option<String>,
-    pub completed: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -76,10 +61,6 @@ pub struct WorkspaceInfo {
 #[serde(rename_all = "camelCase")]
 pub struct Counts {
     pub texts: usize,
-    pub notes: usize,
-    pub prompts: usize,
-    pub tasks: usize,
-    pub links: usize,
     pub recordings: usize,
 }
 
@@ -135,11 +116,9 @@ pub struct NewItem {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ItemPatch {
-    pub item_type: Option<ItemType>,
     pub content: Option<String>,
     pub title: Option<Option<String>>,
     pub url: Option<Option<String>>,
-    pub completed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -149,7 +128,6 @@ pub struct SearchHit {
     pub id: String,
     pub title: String,
     pub snippet: String,
-    pub completed: bool,
     pub created_at: i64,
 }
 

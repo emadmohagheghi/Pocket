@@ -21,6 +21,7 @@ use shortcuts::{ShortcutConfig, ShortcutShared};
 use storage::Store;
 
 pub fn run() {
+    install_panic_logger();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             commands::show_main_window(app);
@@ -116,7 +117,6 @@ pub fn run() {
             commands::create_item,
             commands::update_item,
             commands::delete_item,
-            commands::move_item,
             commands::search,
             commands::save_recording,
             commands::rename_recording,
@@ -157,6 +157,42 @@ fn resolve_data_dir(app: &AppHandle) -> (PathBuf, bool) {
         .map(|p| p.join("data"))
         .unwrap_or_else(|_| PathBuf::from("PocketData"));
     (fallback, true)
+}
+
+/// Panics vanish silently when the app runs detached from a console
+/// (shortcut, tray, autostart). Keep the last ones on disk so crashes
+/// like event-loop panics can actually be diagnosed afterwards.
+fn install_panic_logger() {
+    let path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .map(|d| d.join("PocketData").join("panic.log"))
+        .unwrap_or_else(|| std::env::temp_dir().join("pocket-panic.log"));
+    std::panic::set_hook(Box::new(move |info| {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let payload = info.payload();
+        let msg = payload
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "unknown panic payload".into());
+        let loc = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_default();
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            use std::io::Write;
+            let _ = writeln!(f, "[{ts}] panic: {msg}\n  at {loc}");
+        }
+        eprintln!("[pocket] panic: {msg} at {loc}");
+    }));
 }
 
 /// Disables WebView2's browser accelerator keys (Ctrl+N "new window",

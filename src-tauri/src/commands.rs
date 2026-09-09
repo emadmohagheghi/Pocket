@@ -137,21 +137,34 @@ pub fn get_workspace_counts(app: AppHandle, workspace_id: String) -> AppResult<C
 
 #[tauri::command]
 pub fn delete_workspace(app: AppHandle, workspace_id: String) -> AppResult<()> {
+    crate::shortcuts::diag_log(&format!("delete: command entered ws={workspace_id}"));
     {
         let store = app.state::<Mutex<Store>>();
         let mut store = store.lock().unwrap();
+        crate::shortcuts::diag_log("delete: store lock acquired");
         store.delete_workspace(&workspace_id)?;
+        crate::shortcuts::diag_log("delete: store.delete_workspace returned Ok");
     }
+    crate::shortcuts::diag_log("delete: emitting state-changed");
     state_changed(&app);
+    crate::shortcuts::diag_log("delete: refreshing tray");
     crate::tray::refresh_tray(&app);
-    items_changed(
-        &app,
-        &app.state::<Mutex<Store>>()
+    crate::shortcuts::diag_log("delete: emitting items-changed");
+    // NOTE: bind the id to an owned String FIRST so the store guard is
+    // dropped before items_changed() takes the lock again. Passing
+    // `&...lock().unwrap().settings...` inline here used to hold the guard
+    // across the call and deadlock the store mutex forever (the UI then sat
+    // on "Deleting…" and every later command hung too).
+    let active_id = {
+        app.state::<Mutex<Store>>()
             .lock()
             .unwrap()
             .settings
-            .active_workspace_id,
-    );
+            .active_workspace_id
+            .clone()
+    };
+    items_changed(&app, &active_id);
+    crate::shortcuts::diag_log("delete: command returning Ok");
     Ok(())
 }
 
@@ -224,22 +237,6 @@ pub fn delete_item(app: AppHandle, workspace_id: String, item_id: String) -> App
         let store = app.state::<Mutex<Store>>();
         let mut store = store.lock().unwrap();
         store.delete_item(&workspace_id, &item_id)?;
-    }
-    items_changed(&app, &workspace_id);
-    Ok(())
-}
-
-#[tauri::command]
-pub fn move_item(
-    app: AppHandle,
-    workspace_id: String,
-    item_id: String,
-    before_id: Option<String>,
-) -> AppResult<()> {
-    {
-        let store = app.state::<Mutex<Store>>();
-        let mut store = store.lock().unwrap();
-        store.move_item(&workspace_id, &item_id, before_id)?;
     }
     items_changed(&app, &workspace_id);
     Ok(())

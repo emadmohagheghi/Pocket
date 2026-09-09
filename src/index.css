@@ -121,10 +121,39 @@
   * {
     @apply border-border outline-ring/50;
     }
+  /* The main window is a frameless transparent widget: the body must stay
+     see-through so only the rounded card is visible. Both windows paint
+     their own opaque root (`bg-background` on a full-size div). */
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background: transparent;
     }
   html {
     @apply font-sans;
+    background: transparent;
     }
+}
+
+/* Thin, muted scrollbars matching the dark theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+  border: 2px solid transparent;
+  background-clip: content-box;
 }

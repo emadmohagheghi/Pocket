@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AudioLines, Check, Pause, Pencil, Play, Trash2, Volume2 } from "lucide-react";
+import { AudioLines, Check, Pause, Pencil, Play, RotateCcw, RotateCw, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { usePocket } from "@/store";
@@ -7,6 +7,7 @@ import { api, voiceUrl } from "@/lib/api";
 import { cn, formatBytes, formatDuration, formatRelative } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SectionLabel } from "@/components/ItemList";
 import type { Recording } from "@/types";
 
 export function VoiceList() {
@@ -15,24 +16,27 @@ export function VoiceList() {
 
   if (recordings.length === 0) {
     return (
-      <div className="flex h-full min-h-64 flex-col items-center justify-center gap-2 p-10 text-center">
-        <Volume2 className="size-6 text-muted-foreground/60" />
-        <p className="text-sm font-medium text-muted-foreground">No voice notes yet</p>
-        <p className="max-w-sm text-xs leading-relaxed text-muted-foreground/80">
-          Start a recording from Quick Capture (double Shift → mic icon, or the tray menu). Recordings
-          never leave this machine.
+      <div className="px-1 pb-1 pt-3">
+        <SectionLabel>Voice</SectionLabel>
+        <p className="px-1 text-[15px] font-semibold text-foreground">No voice notes yet</p>
+        <p className="mt-1 max-w-md px-1 text-[13px] leading-relaxed text-muted-foreground">
+          Start a recording from Quick Capture (double Shift → mic icon, or the tray menu).
+          Recordings never leave this machine.
         </p>
-        <Button
-          size="sm"
-          className="mt-1"
-          onClick={() =>
-            api
-              .openCapture("voice")
-              .catch((e) => toast.error(String(e)))
-          }
-        >
-          <AudioLines className="size-4" /> Record a voice note
-        </Button>
+        <div className="px-1 pt-3">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 text-xs"
+            onClick={() =>
+              api
+                .openCapture("voice")
+                .catch((e) => toast.error(String(e)))
+            }
+          >
+            <AudioLines className="size-3.5" /> Record a voice note
+          </Button>
+        </div>
       </div>
     );
   }
@@ -40,31 +44,54 @@ export function VoiceList() {
   const sorted = [...recordings].sort((a, b) => b.createdAt - a.createdAt);
 
   return (
-    <div className="flex flex-col gap-1 p-3" role="list">
-      {sorted.map((rec) => (
-        <VoiceRow key={rec.id} recording={rec} />
-      ))}
+    <div className="px-1 pt-1" role="list">
+      <SectionLabel>Voice notes</SectionLabel>
+      <div className="divide-y divide-border/70" role="list">
+        {sorted.map((rec) => (
+          <VoiceRow key={rec.id} recording={rec} />
+        ))}
+      </div>
     </div>
   );
 }
 
-function VoiceRow({ recording }: { recording: Recording }) {
-  const { settings, deleteRecording, renameRecording } = usePocket();
-  const wsId = settings?.activeWorkspaceId ?? "";
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [playing, setPlaying] = useState(false);
+export function VoiceRow({
+  recording,
+  focused,
+}: {
+  recording: Recording;
+  focused?: boolean;
+}) {
+  const {
+    deleteRecording,
+    renameRecording,
+    player,
+    playerPlaying,
+    playRecording,
+    togglePlayer,
+    stopPlayer,
+  } = usePocket();
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(recording.name);
+  const rowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setName(recording.name), [recording.name]);
 
+  useEffect(() => {
+    if (focused) {
+      rowRef.current?.scrollIntoView({ block: "center" });
+      usePocket.getState().setFocusItem(null);
+    }
+  }, [focused]);
+
+  const isCurrent = player?.recordingId === recording.id;
+  const playing = isCurrent && playerPlaying;
+
   const toggle = () => {
-    const el = audioRef.current;
-    if (!el) return;
-    if (el.paused) {
-      void el.play().catch((e) => toast.error(`Playback failed: ${e}`));
+    if (isCurrent) {
+      togglePlayer();
     } else {
-      el.pause();
+      playRecording(recording);
     }
   };
 
@@ -78,27 +105,20 @@ function VoiceRow({ recording }: { recording: Recording }) {
 
   return (
     <div
+      ref={rowRef}
       role="listitem"
       tabIndex={0}
-      className="group flex items-center gap-3 rounded-lg border bg-card px-3 py-2 transition-colors hover:border-ring/40 focus-visible:outline-2 focus-visible:outline-ring"
+      className="group flex items-center gap-3 px-1 py-3 focus-visible:outline-2 focus-visible:outline-ring"
     >
       <Button
         size="icon"
-        className="size-9 shrink-0 rounded-full"
+        variant="secondary"
+        className="size-8 shrink-0 rounded-full"
         aria-label={playing ? "Pause" : "Play"}
         onClick={toggle}
       >
-        {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
+        {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
       </Button>
-      <audio
-        ref={audioRef}
-        src={voiceUrl(wsId, recording.file)}
-        preload="none"
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)}
-        onError={() => toast.error("Could not load recording")}
-      />
 
       <div className="min-w-0 flex-1">
         {renaming ? (
@@ -125,9 +145,9 @@ function VoiceRow({ recording }: { recording: Recording }) {
             </Button>
           </div>
         ) : (
-          <p className="truncate text-[13px] font-medium">{recording.name}</p>
+          <p className="truncate text-sm font-normal">{recording.name}</p>
         )}
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[11px] text-muted-foreground/70">
           {formatDuration(recording.durationMs)} · {formatBytes(recording.sizeBytes)} ·{" "}
           {formatRelative(recording.createdAt)}
         </p>
@@ -149,6 +169,7 @@ function VoiceRow({ recording }: { recording: Recording }) {
           className="size-7 text-muted-foreground hover:text-destructive"
           aria-label="Delete recording"
           onClick={() => {
+            if (isCurrent) stopPlayer();
             void deleteRecording(recording.id);
             toast.success("Recording deleted");
           }}
@@ -157,5 +178,147 @@ function VoiceRow({ recording }: { recording: Recording }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Persistent mini-player pinned at the bottom of the card while a recording
+ * is playing or paused. Owns the single shared audio element; rows only
+ * dispatch play/pause/seek through the store.
+ */
+export function PlayerBar() {
+  const {
+    player,
+    playerPlaying,
+    playerTime,
+    playerDuration,
+    playerSeekRequest,
+    togglePlayer,
+    stopPlayer,
+    requestPlayerSeek,
+    skipPlayer,
+    reportPlayerProgress,
+  } = usePocket();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const src = player ? voiceUrl(player.wsId, player.file) : "";
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el || !player) return;
+    if (playerPlaying) {
+      void el
+        .play()
+        .catch(() =>
+          reportPlayerProgress(el.currentTime, el.duration || 0, false)
+        );
+    } else {
+      el.pause();
+    }
+  }, [player, playerPlaying, src, reportPlayerProgress]);
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (el && playerSeekRequest != null && Number.isFinite(playerSeekRequest)) {
+      const dur = el.duration;
+      el.currentTime = Math.max(
+        0,
+        Math.min(playerSeekRequest, Number.isFinite(dur) ? dur : playerSeekRequest)
+      );
+      usePocket.setState({ playerSeekRequest: null });
+    }
+  }, [playerSeekRequest]);
+
+  if (!player) return null;
+
+  const dur = Number.isFinite(playerDuration) ? playerDuration : 0;
+
+  /** Reports progress without ever letting an unloaded (NaN) live duration
+      clobber the known length — that NaN was the "0:00 total" bug. */
+  const reportLive = (el: HTMLAudioElement, playing: boolean) => {
+    const d = el.duration;
+    reportPlayerProgress(
+      el.currentTime,
+      Number.isFinite(d) && d > 0 ? d : dur,
+      playing
+    );
+  };
+
+  return (
+    <div className="border-t border-border/60 bg-card/60 px-4 pb-4 pt-3">
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onTimeUpdate={(e) => reportLive(e.currentTarget, !e.currentTarget.paused)}
+        onLoadedMetadata={(e) => reportLive(e.currentTarget, !e.currentTarget.paused)}
+        onPlay={(e) => reportLive(e.currentTarget, true)}
+        onPause={(e) => reportLive(e.currentTarget, false)}
+        onEnded={() => reportPlayerProgress(dur, dur, false)}
+        onError={() => toast.error("Could not load recording")}
+      />
+      <div className="flex items-center gap-2">
+        <p className="min-w-0 flex-1 truncate text-xs font-medium">{player.name}</p>
+        <p className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+          {formatDuration(playerTime * 1000)} / {formatDuration(dur * 1000)}
+        </p>
+      </div>
+      <div className="mt-2 flex items-center gap-1">
+        <BarButton label="Back 10 seconds" onClick={() => skipPlayer(-10)}>
+          <RotateCcw className="size-4" />
+        </BarButton>
+        <Button
+          size="icon"
+          className="size-9 shrink-0 rounded-full"
+          aria-label={playerPlaying ? "Pause" : "Play"}
+          onClick={() => togglePlayer()}
+        >
+          {playerPlaying ? (
+            <Pause className="size-4" />
+          ) : (
+            <Play className="size-4" />
+          )}
+        </Button>
+        <BarButton label="Forward 10 seconds" onClick={() => skipPlayer(10)}>
+          <RotateCw className="size-4" />
+        </BarButton>
+        <input
+          type="range"
+          min={0}
+          max={Math.max(dur, 0.1)}
+          step={0.1}
+          value={Math.min(playerTime, dur)}
+          onChange={(e) => requestPlayerSeek(Number(e.target.value))}
+          aria-label="Seek"
+          className="mx-1 h-1 flex-1 cursor-pointer accent-primary"
+        />
+        <BarButton label="Stop and close player" onClick={() => stopPlayer()}>
+          <Square className="size-4 fill-current" />
+        </BarButton>
+      </div>
+    </div>
+  );
+}
+
+function BarButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      size="icon"
+      variant="ghost"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+    >
+      {children}
+    </Button>
   );
 }

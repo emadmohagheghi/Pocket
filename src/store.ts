@@ -5,8 +5,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import type {
   Item,
-  ItemType,
-  Section,
+  Recording,
   Settings,
   StateChangedPayload,
   WorkspaceData,
@@ -19,18 +18,39 @@ function errMessage(e: unknown): string {
   return String(e);
 }
 
+interface PlayerTrack {
+  recordingId: string;
+  name: string;
+  wsId: string;
+  file: string;
+  /** Known length in seconds, so the time display is right from frame one. */
+  duration: number;
+}
+
 interface PocketStore {
   ready: boolean;
   settings: Settings | null;
   workspaces: WorkspaceInfo[];
   data: WorkspaceData | null;
-  view: Section;
   /** Item to scroll to + highlight (from search). */
   focusItemId: string | null;
   gaming: boolean;
 
+  /** Shared voice player: one track at a time, driven by PlayerBar. */
+  player: PlayerTrack | null;
+  playerPlaying: boolean;
+  playerTime: number;
+  playerDuration: number;
+  playerSeekRequest: number | null;
+
+  playRecording: (rec: Recording) => void;
+  togglePlayer: () => void;
+  stopPlayer: () => void;
+  requestPlayerSeek: (seconds: number) => void;
+  skipPlayer: (deltaSeconds: number) => void;
+  reportPlayerProgress: (time: number, duration: number, playing: boolean) => void;
+
   init: () => Promise<void>;
-  setView: (v: Section) => void;
   setFocusItem: (id: string | null) => void;
   refreshItems: () => Promise<void>;
 
@@ -39,10 +59,9 @@ interface PocketStore {
   deleteWorkspace: (id: string) => Promise<void>;
   setActiveWorkspace: (id: string) => Promise<void>;
 
-  createItem: (type: ItemType, content: string) => Promise<Item | null>;
+  createItem: (content: string) => Promise<Item | null>;
   updateItem: (itemId: string, patch: Partial<Item>) => Promise<void>;
   deleteItem: (itemId: string) => Promise<void>;
-  moveItem: (itemId: string, beforeId: string | null) => Promise<void>;
 
   renameRecording: (recordingId: string, name: string) => Promise<void>;
   deleteRecording: (recordingId: string) => Promise<void>;
@@ -58,9 +77,13 @@ export const usePocket = create<PocketStore>((set, get) => ({
   settings: null,
   workspaces: [],
   data: null,
-  view: "inbox",
   focusItemId: null,
   gaming: false,
+  player: null,
+  playerPlaying: false,
+  playerTime: 0,
+  playerDuration: 0,
+  playerSeekRequest: null,
 
   init: async () => {
     // Backend → frontend event wiring (registered once).
@@ -101,7 +124,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
       .catch(() => {});
   },
 
-  setView: (view) => set({ view, focusItemId: null }),
   setFocusItem: (focusItemId) => set({ focusItemId }),
 
   refreshItems: async () => {
@@ -139,8 +161,11 @@ export const usePocket = create<PocketStore>((set, get) => ({
 
   deleteWorkspace: async (id) => {
     try {
+      await api.log(`deleteWorkspace: invoking backend for ${id}`);
       await api.deleteWorkspace(id);
+      await api.log("deleteWorkspace: backend resolved");
     } catch (e) {
+      await api.log(`deleteWorkspace: backend FAILED: ${errMessage(e)}`);
       toast.error(errMessage(e));
     }
   },
@@ -154,11 +179,11 @@ export const usePocket = create<PocketStore>((set, get) => ({
     }
   },
 
-  createItem: async (type, content) => {
+  createItem: async (content) => {
     const wsId = get().settings?.activeWorkspaceId;
     if (!wsId || !content.trim()) return null;
     try {
-      const item = await api.createItem(wsId, { itemType: type, content });
+      const item = await api.createItem(wsId, { itemType: "text", content });
       return item;
     } catch (e) {
       toast.error(errMessage(e));
@@ -181,16 +206,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
     if (!wsId) return;
     try {
       await api.deleteItem(wsId, itemId);
-    } catch (e) {
-      toast.error(errMessage(e));
-    }
-  },
-
-  moveItem: async (itemId, beforeId) => {
-    const wsId = get().settings?.activeWorkspaceId;
-    if (!wsId) return;
-    try {
-      await api.moveItem(wsId, itemId, beforeId);
     } catch (e) {
       toast.error(errMessage(e));
     }
@@ -224,4 +239,54 @@ export const usePocket = create<PocketStore>((set, get) => ({
       toast.error(errMessage(e));
     }
   },
+
+  playRecording: (rec) => {
+    const wsId = get().settings?.activeWorkspaceId ?? "";
+    set({
+      player: {
+        recordingId: rec.id,
+        name: rec.name,
+        wsId,
+        file: rec.file,
+        duration: rec.durationMs / 1000,
+      },
+      playerPlaying: true,
+      playerTime: 0,
+      playerDuration: rec.durationMs / 1000,
+      playerSeekRequest: null,
+    });
+  },
+
+  togglePlayer: () => {
+    const { player, playerPlaying, playerTime, playerDuration } = get();
+    if (!player) return;
+    if (!playerPlaying && playerDuration > 0 && playerTime >= playerDuration - 0.5) {
+      // Ended track: restart from the beginning instead of stalling at the end.
+      set({ playerPlaying: true, playerSeekRequest: 0 });
+    } else {
+      set({ playerPlaying: !playerPlaying });
+    }
+  },
+
+  stopPlayer: () =>
+    set({
+      player: null,
+      playerPlaying: false,
+      playerTime: 0,
+      playerDuration: 0,
+      playerSeekRequest: null,
+    }),
+
+  requestPlayerSeek: (seconds) => {
+    if (!get().player) return;
+    set({ playerSeekRequest: Math.max(0, seconds) });
+  },
+
+  skipPlayer: (deltaSeconds) => {
+    if (!get().player) return;
+    set({ playerSeekRequest: Math.max(0, get().playerTime + deltaSeconds) });
+  },
+
+  reportPlayerProgress: (time, duration, playing) =>
+    set({ playerTime: time, playerDuration: duration, playerPlaying: playing }),
 }));

@@ -1,8 +1,9 @@
 # Pocket
 
 A lightweight, privacy-first desktop companion for people who work with AI tools.
-Capture text, links, prompts, tasks, and voice notes from anywhere — without
-leaving your workflow.
+Capture plain text and voice notes from anywhere — without
+leaving your workflow. Any text that happens to be a URL is rendered as a
+clickable link automatically.
 
 Built with **Rust + Tauri v2 + React + TypeScript + shadcn/ui + Tailwind CSS**.
 
@@ -10,10 +11,10 @@ Built with **Rust + Tauri v2 + React + TypeScript + shadcn/ui + Tailwind CSS**.
 
 - **Quick capture everywhere** — press **Shift twice** (default, configurable) or
   `Ctrl+N` to open a compact capture bar. Type, hit Enter, done.
-- **Workspaces** — every note, prompt, task, link, and recording belongs to the
+- **Workspaces** — every text item and recording belongs to the
   active workspace. Switch context with one click.
-- **Prompt queue** — queue prompts for your AI tools, copy with one click, mark
-  sent, reorder.
+- **Text** — a single unified type for everything you capture. Just plain text;
+  URLs stay clickable.
 - **Voice notes** — record from the capture bar or tray. Audio (opus/webm) is
   stored locally and never uploaded anywhere.
 - **System tray** — Pocket lives in the tray: quick capture, voice recording,
@@ -35,10 +36,9 @@ Built with **Rust + Tauri v2 + React + TypeScript + shadcn/ui + Tailwind CSS**.
 | Search workspace | `Ctrl+K` |
 | Save capture | `Enter` |
 | Newline in capture | `Shift+Enter` |
-| Switch capture type | `Alt+1..5` |
+| Switch capture mode (Text / Voice) | `Alt+1` / `Alt+2` |
 | Close capture | `Esc` |
 | Copy focused item | `C` |
-| Complete focused task/prompt | `X` |
 | Edit focused item | `E` |
 | Delete focused item | `Del` |
 

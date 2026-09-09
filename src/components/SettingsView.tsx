@@ -15,10 +15,15 @@ import { formatBytes, cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Kbd } from "@/components/ui/kbd";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -39,23 +44,23 @@ export function SettingsView() {
   if (!settings) return null;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8 p-6 pb-16">
+    <div className="w-full max-w-full min-w-0 space-y-6 px-1 pb-2">
       <Section icon={<MonitorCog className="size-4" />} title="General">
-        <Row label="Launch on startup" hint="Start Pocket automatically when you sign in.">
+        <Row label="Launch on startup">
           <Switch
             checked={settings.launchOnStartup}
             onCheckedChange={(v) => void setSettings({ launchOnStartup: v })}
             aria-label="Launch on startup"
           />
         </Row>
-        <Row label="Start minimized" hint="Hide the main window on launch; Pocket lives in the tray.">
+        <Row label="Start minimized">
           <Switch
             checked={settings.startMinimized}
             onCheckedChange={(v) => void setSettings({ startMinimized: v })}
             aria-label="Start minimized"
           />
         </Row>
-        <Row label="Close to system tray" hint="Closing the window keeps Pocket running in the tray.">
+        <Row label="Close to system tray">
           <Switch
             checked={settings.closeToTray}
             onCheckedChange={(v) => void setSettings({ closeToTray: v })}
@@ -79,7 +84,6 @@ export function SettingsView() {
       <Section icon={<Keyboard className="size-4" />} title="Shortcuts">
         <Row
           label="Quick capture"
-          hint="Global. Opens the capture bar from anywhere."
         >
           <div className="flex items-center gap-2">
             <Select
@@ -114,7 +118,7 @@ export function SettingsView() {
             )}
           </div>
         </Row>
-        <Row label="Voice recording" hint="Optional. Opens the capture bar in voice mode.">
+        <Row label="Voice recording">
           {settings.voiceShortcut ? (
             <div className="flex items-center gap-2">
               <ShortcutInput
@@ -155,7 +159,6 @@ export function SettingsView() {
         </Row>
         <Row
           label="Gaming mode"
-          hint="Detects fullscreen games and automatically disables all global shortcuts."
         >
           <Switch
             checked={settings.gamingDetectionEnabled}
@@ -169,13 +172,13 @@ export function SettingsView() {
         <div className="rounded-lg border bg-card p-4">
           <ul className="space-y-1.5 text-[13px] text-muted-foreground">
             <li>· Pocket has no account, no cloud and no telemetry.</li>
-            <li>· Everything — notes, prompts, tasks, links and voice recordings — is stored on this machine only.</li>
+            <li>· Everything — text and voice recordings — is stored on this machine only.</li>
             <li>· Voice recordings are never uploaded anywhere.</li>
           </ul>
           <Separator className="my-3" />
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <p className="text-[13px] font-medium">Storage location</p>
                 {storage?.usesFallbackLocation && (
                   <Badge variant="secondary" className="text-[10px]">
@@ -203,18 +206,6 @@ export function SettingsView() {
         </div>
       </Section>
 
-      <Section icon={<Keyboard className="size-4" />} title="Keyboard tips">
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border bg-card p-4 text-[13px] text-muted-foreground">
-          <Tip keys={<Kbd>Ctrl K</Kbd>} text="Search this workspace" />
-          <Tip keys={<Kbd>Ctrl N</Kbd>} text="Open quick capture" />
-          <Tip keys={<span>Double <Kbd>Shift</Kbd></span>} text="Quick capture (default global)" />
-          <Tip keys={<Kbd>Enter</Kbd>} text="Save / copy selection" />
-          <Tip keys={<Kbd>C</Kbd>} text="Copy focused item" />
-          <Tip keys={<Kbd>X</Kbd>} text="Complete focused task or prompt" />
-          <Tip keys={<Kbd>E</Kbd>} text="Edit focused item" />
-          <Tip keys={<Kbd>Del</Kbd>} text="Delete focused item" />
-        </div>
-      </Section>
     </div>
   );
 }
@@ -241,29 +232,17 @@ function Section({
 
 function Row({
   label,
-  hint,
   children,
 }: {
   label: string;
-  hint?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-6 rounded-lg px-1 py-2.5">
-      <div>
+    <div className="flex items-center justify-between gap-4 rounded-lg px-1 py-2.5">
+      <div className="min-w-0">
         <Label className="text-[13px]">{label}</Label>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       </div>
       <div className="shrink-0">{children}</div>
-    </div>
-  );
-}
-
-function Tip({ keys, text }: { keys: React.ReactNode; text: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="shrink-0">{keys}</span>
-      <span className="truncate">{text}</span>
     </div>
   );
 }
@@ -313,5 +292,19 @@ function ShortcutInput({
       onBlur={() => setCapturing(false)}
       onClick={() => inputRef.current?.focus()}
     />
+  );
+}
+
+/** Settings rendered as a popup dialog (opened from the "…" menu). */
+export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[75vh] overflow-y-auto sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Settings</DialogTitle>
+        </DialogHeader>
+        <SettingsView />
+      </DialogContent>
+    </Dialog>
   );
 }

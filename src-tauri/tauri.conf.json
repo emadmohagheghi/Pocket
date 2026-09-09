@@ -14,10 +14,15 @@
       {
         "label": "main",
         "title": "Pocket",
-        "width": 1080,
-        "height": 720,
-        "minWidth": 880,
-        "minHeight": 560,
+        "width": 400,
+        "height": 620,
+        "minWidth": 360,
+        "minHeight": 500,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "maximizable": false,
         "center": true,
         "visible": true
       },
@@ -32,7 +37,8 @@
         "decorations": false,
         "resizable": false,
         "center": true,
-        "transparent": false
+        "transparent": false,
+        "shadow": false
       }
     ],
     "security": {

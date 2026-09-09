@@ -162,20 +162,10 @@ impl Store {
 
     pub fn counts(&self, ws_id: &str) -> AppResult<Counts> {
         let data = self.workspace_data(ws_id)?;
-        let mut counts = Counts {
+        Ok(Counts {
+            texts: data.items.len(),
             recordings: data.recordings.len(),
-            ..Default::default()
-        };
-        for item in &data.items {
-            match item.item_type {
-                ItemType::Note => counts.notes += 1,
-                ItemType::Prompt => counts.prompts += 1,
-                ItemType::Task => counts.tasks += 1,
-                ItemType::Link => counts.links += 1,
-                ItemType::Text => counts.texts += 1,
-            }
-        }
-        Ok(counts)
+        })
     }
 
     pub fn workspace_info(&self, ws_id: &str) -> AppResult<WorkspaceInfo> {
@@ -245,13 +235,16 @@ impl Store {
 
         // Remove on-disk data first; if this fails we abort so the index and
         // the files never disagree.
+        crate::shortcuts::diag_log("delete: removing voices dir");
         fsutil::remove_tree(&self.voices_dir(ws_id))
             .map_err(|e| AppError::Storage(format!("could not delete voice files: {e}")))?;
+        crate::shortcuts::diag_log("delete: removing workspace dir");
         fsutil::remove_tree(&self.workspace_dir(ws_id))
             .map_err(|e| AppError::Storage(format!("could not delete workspace file: {e}")))?;
 
         self.workspaces.remove(pos);
         self.data.remove(ws_id);
+        crate::shortcuts::diag_log("delete: persisting index");
         self.persist_index();
 
         if self.settings.active_workspace_id == ws_id {
@@ -275,29 +268,16 @@ impl Store {
             return Err(AppError::Invalid("content cannot be empty".into()));
         }
         let content = new.content.trim().to_string();
-        // A link item always carries its target in `url`.
-        let url = match new.url {
-            Some(u) => {
-                let t = u.trim().to_string();
-                if t.is_empty() {
-                    None
-                } else {
-                    Some(t)
-                }
-            }
-            None if new.item_type == ItemType::Link => Some(content.clone()),
-            None => None,
-        };
+        let url = new.url.map(|u| u.trim().to_string()).filter(|u| !u.is_empty());
         let item = Item {
             id: Uuid::new_v4().to_string(),
-            item_type: new.item_type,
+            item_type: ItemType::Text,
             content,
             title: new
                 .title
                 .map(|t| t.trim().to_string())
                 .filter(|t| !t.is_empty()),
             url,
-            completed: false,
             created_at: now_ms(),
             updated_at: now_ms(),
         };
@@ -314,9 +294,6 @@ impl Store {
             .iter_mut()
             .find(|i| i.id == item_id)
             .ok_or(AppError::ItemNotFound)?;
-        if let Some(t) = patch.item_type {
-            item.item_type = t;
-        }
         if let Some(c) = patch.content {
             let c = c.trim().to_string();
             if c.is_empty() {
@@ -329,9 +306,6 @@ impl Store {
         }
         if let Some(u) = patch.url {
             item.url = u.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-        }
-        if let Some(done) = patch.completed {
-            item.completed = done;
         }
         item.updated_at = now_ms();
         let item = item.clone();
@@ -346,34 +320,6 @@ impl Store {
         if data.items.len() == len_before {
             return Err(AppError::ItemNotFound);
         }
-        self.persist_workspace(ws_id);
-        Ok(())
-    }
-
-    /// Moves `item_id` so that it sits immediately before `before_id`
-    /// (or at the end when `before_id` is None).
-    pub fn move_item(
-        &mut self,
-        ws_id: &str,
-        item_id: &str,
-        before_id: Option<String>,
-    ) -> AppResult<()> {
-        let data = self.workspace_data_mut(ws_id)?;
-        let from = data
-            .items
-            .iter()
-            .position(|i| i.id == item_id)
-            .ok_or(AppError::ItemNotFound)?;
-        let item = data.items.remove(from);
-        let target = match &before_id {
-            Some(bid) => data
-                .items
-                .iter()
-                .position(|i| &i.id == bid)
-                .unwrap_or(data.items.len()),
-            None => data.items.len(),
-        };
-        data.items.insert(target, item);
         self.persist_workspace(ws_id);
         Ok(())
     }
@@ -492,11 +438,10 @@ impl Store {
             ];
             if haystacks.iter().any(|h| h.contains(&q)) {
                 hits.push(SearchHit {
-                    kind: format!("{:?}", item.item_type).to_lowercase(),
+                    kind: "text".into(),
                     id: item.id.clone(),
                     title,
                     snippet: snippet(&item.content, &q),
-                    completed: item.completed,
                     created_at: item.created_at,
                 });
             }
@@ -508,7 +453,6 @@ impl Store {
                     id: rec.id.clone(),
                     title: rec.name.clone(),
                     snippet: format!("voice note · {}", rec.file),
-                    completed: false,
                     created_at: rec.created_at,
                 });
             }
@@ -616,7 +560,7 @@ mod tests {
             .create_item(
                 &ws.meta.id,
                 NewItem {
-                    item_type: ItemType::Prompt,
+                    item_type: ItemType::Text,
                     content: "hello world".into(),
                     title: None,
                     url: None,
@@ -633,7 +577,7 @@ mod tests {
             .exists());
 
         let counts = store.counts(&ws.meta.id).unwrap();
-        assert_eq!(counts.prompts, 1);
+        assert_eq!(counts.texts, 1);
         assert_eq!(counts.recordings, 1);
 
         store.delete_workspace(&ws.meta.id).unwrap();
@@ -651,7 +595,7 @@ mod tests {
             .create_item(
                 &ws.meta.id,
                 NewItem {
-                    item_type: ItemType::Note,
+                    item_type: ItemType::Text,
                     content: "Rust ownership rules".into(),
                     title: None,
                     url: None,
@@ -664,7 +608,7 @@ mod tests {
 
         let hits = store.search(&ws.meta.id, "rust").unwrap();
         assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].kind, "note");
+        assert_eq!(hits[0].kind, "text");
 
         let hits = store.search(&ws.meta.id, "standup").unwrap();
         assert_eq!(hits.len(), 1);
@@ -682,69 +626,14 @@ mod tests {
             .create_item(
                 &ws.meta.id,
                 NewItem {
-                    item_type: ItemType::Link,
+                    item_type: ItemType::Text,
                     content: "https://example.com".into(),
                     title: None,
                     url: None,
                 },
             )
             .unwrap();
-        assert_eq!(item.url.as_deref(), Some("https://example.com"));
-        cleanup(&dir);
-    }
-
-    #[test]
-    fn move_item_reorders() {
-        let (mut store, dir) = test_store();
-        let ws = store.create_workspace("WS").unwrap();
-        let a = store
-            .create_item(
-                &ws.meta.id,
-                NewItem {
-                    item_type: ItemType::Task,
-                    content: "a".into(),
-                    title: None,
-                    url: None,
-                },
-            )
-            .unwrap();
-        let b = store
-            .create_item(
-                &ws.meta.id,
-                NewItem {
-                    item_type: ItemType::Task,
-                    content: "b".into(),
-                    title: None,
-                    url: None,
-                },
-            )
-            .unwrap();
-        let c = store
-            .create_item(
-                &ws.meta.id,
-                NewItem {
-                    item_type: ItemType::Task,
-                    content: "c".into(),
-                    title: None,
-                    url: None,
-                },
-            )
-            .unwrap();
-
-        // Move "c" before "a" -> [c, a, b]
-        store
-            .move_item(&ws.meta.id, &c.id, Some(a.id.clone()))
-            .unwrap();
-        let items = &store.data[&ws.meta.id].items;
-        assert_eq!(
-            items.iter().map(|i| i.content.as_str()).collect::<Vec<_>>(),
-            vec!["c", "a", "b"]
-        );
-
-        // Move "b" to end (no target) -> [c, a, b] (already last)
-        store.move_item(&ws.meta.id, &b.id, None).unwrap();
-        let items = &store.data[&ws.meta.id].items;
-        assert_eq!(items.last().unwrap().id, b.id);
+        assert_eq!(item.item_type, ItemType::Text);
         cleanup(&dir);
     }
 
@@ -759,7 +648,7 @@ mod tests {
                 .create_item(
                     &ws.meta.id,
                     NewItem {
-                        item_type: ItemType::Prompt,
+                        item_type: ItemType::Text,
                         content: "survives restart".into(),
                         title: None,
                         url: None,

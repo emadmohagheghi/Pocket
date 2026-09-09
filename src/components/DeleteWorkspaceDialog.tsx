@@ -16,11 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const LABELS: Record<keyof Counts, string> = {
-  texts: "quick notes",
-  notes: "notes",
-  prompts: "prompts",
-  tasks: "tasks",
-  links: "links",
+  texts: "text items",
   recordings: "voice recordings",
 };
 
@@ -96,8 +92,8 @@ export function DeleteWorkspaceDialog({ workspaceId, onClose }: Props) {
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
           <AlertDialogAction
+            variant="destructive"
             disabled={busy}
-            className="bg-destructive text-white hover:bg-destructive/90"
             onClick={(e) => {
               e.preventDefault();
               void confirm();

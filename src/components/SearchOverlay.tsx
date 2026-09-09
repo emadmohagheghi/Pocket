@@ -8,24 +8,15 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
-import type { SearchHit, Section } from "@/types";
+import type { SearchHit } from "@/types";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const KIND_TO_SECTION: Record<string, Section> = {
-  text: "inbox",
-  note: "notes",
-  prompt: "prompts",
-  task: "tasks",
-  link: "links",
-  voice: "voice",
-};
-
 export function SearchOverlay({ open, onOpenChange }: Props) {
-  const { settings, setView, setFocusItem } = usePocket();
+  const { settings, setFocusItem } = usePocket();
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [selected, setSelected] = useState(0);
@@ -66,12 +57,8 @@ export function SearchOverlay({ open, onOpenChange }: Props) {
 
   const activate = (hit: SearchHit) => {
     onOpenChange(false);
-    const section = KIND_TO_SECTION[hit.kind] ?? "inbox";
-    setView(section);
-    if (hit.kind !== "voice") setFocusItem(hit.id);
-    if (hit.kind === "voice") {
-      void api.copyToClipboard(hit.title).then(() => toast.success("Recording name copied"));
-    }
+    // Single unified feed: every hit just focuses its row.
+    setFocusItem(hit.id);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -91,36 +78,36 @@ export function SearchOverlay({ open, onOpenChange }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-[12vh]"
+      className="fixed inset-3 z-50 flex items-start justify-center rounded-3xl bg-black/40 pt-[11vh]"
       onClick={() => onOpenChange(false)}
       role="dialog"
       aria-modal="true"
       aria-label="Search workspace"
     >
       <div
-        className="w-[560px] max-w-[90vw] overflow-hidden rounded-xl border bg-popover shadow-xl"
+        className="w-[560px] max-w-[90vw] overflow-hidden rounded-2xl border border-border/60 bg-popover"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b px-3">
+        <div className="flex items-center gap-2.5 px-4 py-1">
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <Input
             ref={inputRef}
             value={query}
-            placeholder="Search notes, prompts, links, tasks, voice…"
-            className="h-11 border-0 bg-transparent shadow-none focus-visible:ring-0"
+            placeholder="Search text and voice…"
+            className="h-11 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             aria-label="Search query"
           />
           <Kbd>Esc</Kbd>
         </div>
-        <div className="max-h-[320px] overflow-y-auto p-1.5">
+        <div className="max-h-[320px] space-y-0.5 overflow-y-auto border-t border-border/60 p-2">
           {query.trim() === "" ? (
-            <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+            <p className="px-4 py-8 text-center text-[11px] leading-relaxed text-muted-foreground/70">
               Searches only this workspace — nothing leaves your machine.
             </p>
           ) : hits.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-muted-foreground">No matches.</p>
+            <p className="px-4 py-8 text-center text-[11px] leading-relaxed text-muted-foreground/70">No matches.</p>
           ) : (
             hits.map((hit, i) => (
               <button

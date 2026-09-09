@@ -1,4 +1,4 @@
-export type ItemType = "text" | "note" | "prompt" | "task" | "link";
+export type ItemType = "text";
 
 export interface Item {
   id: string;
@@ -6,7 +6,6 @@ export interface Item {
   content: string;
   title: string | null;
   url: string | null;
-  completed: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -27,10 +26,6 @@ export interface WorkspaceData {
 
 export interface Counts {
   texts: number;
-  notes: number;
-  prompts: number;
-  tasks: number;
-  links: number;
   recordings: number;
 }
 
@@ -70,18 +65,8 @@ export interface SearchHit {
   id: string;
   title: string;
   snippet: string;
-  completed: boolean;
   createdAt: number;
 }
-
-export type Section =
-  | "inbox"
-  | "prompts"
-  | "notes"
-  | "links"
-  | "tasks"
-  | "voice"
-  | "settings";
 
 export interface StateChangedPayload {
   settings: Settings;

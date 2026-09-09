@@ -32,6 +32,7 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn refresh_tray(app: &AppHandle) {
+    crate::shortcuts::diag_log("delete: refresh_tray entered");
     let Some(tray) = app.tray_by_id("pocket-tray") else {
         return;
     };
@@ -43,6 +44,7 @@ pub fn refresh_tray(app: &AppHandle) {
         }
         Err(e) => eprintln!("[pocket] failed to rebuild tray menu: {e}"),
     }
+    crate::shortcuts::diag_log("delete: refresh_tray done");
 }
 
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {

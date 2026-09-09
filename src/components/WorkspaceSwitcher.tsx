@@ -1,30 +1,34 @@
-import { useState } from "react";
-import { Check, ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { usePocket } from "@/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { DeleteWorkspaceDialog } from "@/components/DeleteWorkspaceDialog";
-import { cn } from "@/lib/utils";
 
-export function WorkspaceSwitcher() {
-  const { settings, workspaces, setActiveWorkspace, createWorkspace, renameWorkspace } =
+/** Workspace list/switch/create/rename/delete, opened from the "…" menu. */
+export function WorkspacesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { workspaces, setActiveWorkspace, createWorkspace, renameWorkspace } =
     usePocket();
-  const active = workspaces.find((w) => w.id === settings?.activeWorkspaceId);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
-  const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setNewName("");
+      setEditingId(null);
+      setDeleteTarget(null);
+    }
+  }, [open ]);
 
   const submitNew = async () => {
     const name = newName.trim();
@@ -32,120 +36,118 @@ export function WorkspaceSwitcher() {
     const ws = await createWorkspace(name);
     if (ws) {
       setNewName("");
-      setAdding(false);
       await setActiveWorkspace(ws.id);
+      onClose();
     }
+  };
+
+  const startRename = (id: string, current: string) => {
+    setEditingId(id);
+    setEditValue(current);
   };
 
   const submitRename = async () => {
-    if (!active) return;
-    const name = renameValue.trim();
-    if (!name || name === active.name) {
-      setRenaming(false);
-      return;
+    if (!editingId) return;
+    const name = editValue.trim();
+    const current = workspaces.find((w) => w.id === editingId)?.name;
+    if (name && name !== current) {
+      await renameWorkspace(editingId, name);
+      toast.success("Workspace renamed");
     }
-    await renameWorkspace(active.id, name);
-    setRenaming(false);
-    toast.success("Workspace renamed");
+    setEditingId(null);
   };
 
   return (
-    <>
-      {adding || renaming ? (
-        <div className="flex items-center gap-1">
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Workspaces</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col">
+          {workspaces.map((w) => {
+            const count = w.counts.texts + w.counts.recordings;
+            return (
+              <div
+                key={w.id}
+                className="flex items-center gap-1 rounded-lg px-1 py-1 hover:bg-accent"
+              >
+                {editingId === w.id ? (
+                  <Input
+                    autoFocus
+                    value={editValue}
+                    className="h-8"
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void submitRename();
+                      if (e.key === "Escape") setEditingId(null);
+                    }}
+                    onBlur={() => void submitRename()}
+                    aria-label="Rename workspace"
+                  />
+                ) : (
+                  <button
+                    onClick={() => {
+                      void setActiveWorkspace(w.id);
+                      onClose();
+                    }}
+                    className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1 text-left text-[13px]"
+                  >
+                    <span className="flex-1 truncate">{w.name}</span>
+                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      {count}
+                    </span>
+                  </button>
+                )}
+                {editingId !== w.id && (
+                  <>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+                      aria-label={`Rename ${w.name}`}
+                      onClick={() => startRename(w.id, w.name)}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
+                      aria-label={`Delete ${w.name}`}
+                      disabled={workspaces.length <= 1}
+                      onClick={() => setDeleteTarget(w.id)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-1.5 pt-1">
           <Input
-            autoFocus
-            value={adding ? newName : renameValue}
-            placeholder={adding ? "Workspace name" : undefined}
+            value={newName}
+            placeholder="New workspace…"
             className="h-8"
-            onChange={(e) => (adding ? setNewName(e.target.value) : setRenameValue(e.target.value))}
+            onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") void (adding ? submitNew() : submitRename());
-              if (e.key === "Escape") {
-                setAdding(false);
-                setRenaming(false);
-              }
+              if (e.key === "Enter") void submitNew();
             }}
-            onBlur={() => void (adding ? submitNew() : submitRename())}
+            aria-label="New workspace name"
           />
           <Button
             size="icon"
             variant="ghost"
             className="size-8 shrink-0"
-            aria-label="Confirm"
-            onClick={() => void (adding ? submitNew() : submitRename())}
+            aria-label="Create workspace"
+            onClick={() => void submitNew()}
           >
-            <Check className="size-4" />
+            <Plus className="size-4" />
           </Button>
         </div>
-      ) : (
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              className="w-full justify-between px-3 font-semibold"
-              aria-label={`Active workspace: ${active?.name ?? "—"}`}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
-                <span className="truncate">{active?.name ?? "No workspace"}</span>
-              </span>
-              <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            {workspaces.map((w) => (
-              <DropdownMenuItem
-                key={w.id}
-                onClick={() => void setActiveWorkspace(w.id)}
-                className="gap-2"
-              >
-                <Check
-                  className={cn(
-                    "size-3.5",
-                    w.id === active?.id ? "opacity-100" : "opacity-0"
-                  )}
-                />
-                <span className="flex-1 truncate">{w.name}</span>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => {
-                setMenuOpen(false);
-                setAdding(true);
-              }}
-            >
-              <Plus className="size-4" /> New workspace
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!active}
-              onClick={() => {
-                setMenuOpen(false);
-                setRenameValue(active?.name ?? "");
-                setRenaming(true);
-              }}
-            >
-              <Pencil className="size-4" /> Rename workspace
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!active || workspaces.length <= 1}
-              variant="destructive"
-              onClick={() => {
-                setMenuOpen(false);
-                setDeleteTarget(active?.id ?? null);
-              }}
-            >
-              <Trash2 className="size-4" /> Delete workspace…
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-
-      <DeleteWorkspaceDialog
-        workspaceId={deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-      />
-    </>
+      </DialogContent>
+      <DeleteWorkspaceDialog workspaceId={deleteTarget} onClose={() => setDeleteTarget(null)} />
+    </Dialog>
   );
 }
