@@ -86,7 +86,7 @@ export function SearchBar({ inputRef }: SearchBarProps) {
     <div className="relative min-w-0 flex-1">
       <label
         htmlFor={inputId}
-        className="flex items-center gap-2.5 rounded-xl bg-muted/60 px-3.5 py-2.5 transition-colors focus-within:bg-muted focus-within:ring-2 focus-within:ring-ring/50"
+        className="flex items-center gap-2.5 rounded-xl bg-muted/60 px-3.5 py-2.5 transition-colors focus-within:bg-muted"
       >
         <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         {/* The engine paints the placeholder over the caret, hiding it while

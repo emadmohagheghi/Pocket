@@ -124,7 +124,7 @@ export function AddBar() {
     >
       <label
         htmlFor={inputId}
-        className="flex items-center gap-2.5 rounded-full border border-border/60 bg-muted/50 px-3.5 py-2 transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/50"
+        className="flex items-center gap-2.5 rounded-full border border-border/60 bg-muted/50 px-3.5 py-2 transition-colors focus-within:border-border"
       >
         <Plus className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         {/* Placeholder as an under-layer so the caret stays visible while the
