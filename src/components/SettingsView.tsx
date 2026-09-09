@@ -267,39 +267,31 @@ export function SettingsView() {
             </Button>
           </div>
           <Separator className="my-3" />
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[13px] font-medium">Export backup</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Export or import a portable ZIP with every workspace, item, and audio file.
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Button
-                variant="outline"
-                disabled={exporting || importing}
-                onClick={() => void importBackup()}
-              >
-                {importing ? (
-                  <LoaderCircle data-icon="inline-start" className="animate-spin" />
-                ) : (
-                  <Upload data-icon="inline-start" />
-                )}
-                {importing ? "Importing…" : "Import"}
-              </Button>
-              <Button
-                variant="outline"
-                disabled={exporting || importing}
-                onClick={() => void exportBackup()}
-              >
-                {exporting ? (
-                  <LoaderCircle data-icon="inline-start" className="animate-spin" />
-                ) : (
-                  <Download data-icon="inline-start" />
-                )}
-                {exporting ? "Exporting…" : "Export"}
-              </Button>
-            </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              disabled={exporting || importing}
+              onClick={() => void importBackup()}
+            >
+              {importing ? (
+                <LoaderCircle data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <Upload data-icon="inline-start" />
+              )}
+              {importing ? "Importing…" : "Import"}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={exporting || importing}
+              onClick={() => void exportBackup()}
+            >
+              {exporting ? (
+                <LoaderCircle data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <Download data-icon="inline-start" />
+              )}
+              {exporting ? "Exporting…" : "Export"}
+            </Button>
           </div>
         </div>
       </Section>

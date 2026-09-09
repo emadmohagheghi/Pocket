@@ -89,30 +89,20 @@ export function SearchBar({ inputRef }: SearchBarProps) {
         className="flex items-center gap-2.5 rounded-xl bg-muted/60 px-3.5 py-2.5 transition-colors focus-within:bg-muted"
       >
         <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        {/* The engine paints the placeholder over the caret, hiding it while
-            the field is empty — so the placeholder is a layer under a
-            transparent input instead of the native attribute. */}
         <div className="relative min-w-0 flex-1">
-          {query.length === 0 && (
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-y-0 left-0 flex items-center truncate text-sm text-muted-foreground"
-            >
-              Search text and voice…
-            </span>
-          )}
           <Input
             id={inputId}
             ref={inputRef}
             type="search"
             value={query}
+            placeholder="Search text and voice…"
             aria-label="Search text and voice"
             role="combobox"
             aria-autocomplete="list"
             aria-expanded={showResults}
             aria-controls={showResults ? resultsId : undefined}
             aria-activedescendant={hits[selected] ? `${resultsId}-${selected}` : undefined}
-            className="relative h-auto border-0 !bg-transparent p-0 text-sm shadow-none focus-visible:border-0 focus-visible:ring-0"
+            className="relative h-auto border-0 !bg-transparent p-0 text-sm shadow-none focus-visible:border-0 focus-visible:ring-0 rounded-none"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={onKeyDown}
           />

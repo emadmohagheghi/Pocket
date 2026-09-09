@@ -127,17 +127,7 @@ export function AddBar() {
         className="flex items-center gap-2.5 rounded-full border border-border/60 bg-muted/50 px-3.5 py-2 transition-colors focus-within:border-border"
       >
         <Plus className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        {/* Placeholder as an under-layer so the caret stays visible while the
-            field is empty (the engine paints native placeholders over it). */}
         <div className="relative min-w-0 flex-1">
-          {value.length === 0 && (
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-y-0 left-0 flex items-center truncate text-sm text-muted-foreground"
-            >
-              Add a note or a prompt…
-            </span>
-          )}
           <Input
             id={inputId}
             value={value}
@@ -146,8 +136,9 @@ export function AddBar() {
             onKeyDown={(event) => {
               if (event.key === "Escape") setValue("");
             }}
+            placeholder="Add a note or a prompt…"
             aria-label="Add a text item"
-            className="relative h-auto border-0 !bg-transparent p-0 text-sm shadow-none focus-visible:border-0 focus-visible:ring-0"
+            className="relative h-auto border-0 !bg-transparent p-0 text-sm shadow-none focus-visible:border-0 focus-visible:ring-0 rounded-none"
           />
         </div>
       </label>
