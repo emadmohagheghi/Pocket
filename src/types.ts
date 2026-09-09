@@ -54,6 +54,26 @@ export interface StorageInfo {
   usesFallbackLocation: boolean;
 }
 
+export interface ExportSummary {
+  path: string;
+  workspaces: number;
+  items: number;
+  recordings: number;
+  audioFiles: number;
+  missingAudio: number;
+}
+
+export interface ImportSummary {
+  workspacesCreated: number;
+  workspacesMerged: number;
+  itemsImported: number;
+  itemsSkipped: number;
+  recordingsImported: number;
+  recordingsSkipped: number;
+  audioFilesRestored: number;
+  missingAudio: number;
+}
+
 export interface InitialState {
   settings: Settings;
   workspaces: WorkspaceInfo[];

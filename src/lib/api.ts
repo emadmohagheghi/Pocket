@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   Counts,
+  ExportSummary,
   InitialState,
+  ImportSummary,
   Item,
   ItemType,
   Recording,
@@ -74,6 +76,8 @@ export const api = {
 
   getStorageInfo: () => invoke<StorageInfo>("get_storage_info"),
   openDataFolder: () => invoke<void>("open_data_folder"),
+  exportBackup: (path: string) => invoke<ExportSummary>("export_backup", { path }),
+  importBackup: (path: string) => invoke<ImportSummary>("import_backup", { path }),
 
   openCapture: (mode: CaptureMode) => invoke<void>("open_capture", { mode }),
   log: (message: string) => invoke<void>("frontend_log", { message }).catch(() => {}),

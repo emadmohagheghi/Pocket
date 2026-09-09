@@ -3,6 +3,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { usePocket } from "@/store";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,7 +16,7 @@ import { DeleteWorkspaceDialog } from "@/components/DeleteWorkspaceDialog";
 
 /** Workspace list/switch/create/rename/delete, opened from the "…" menu. */
 export function WorkspacesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { workspaces, setActiveWorkspace, createWorkspace, renameWorkspace } =
+  const { workspaces, settings, setActiveWorkspace, createWorkspace, renameWorkspace } =
     usePocket();
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -92,6 +93,14 @@ export function WorkspacesDialog({ open, onClose }: { open: boolean; onClose: ()
                     }}
                     className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1 text-left text-[13px]"
                   >
+                    {/* Green dot marks the workspace captures are going to. */}
+                    <span
+                      className={cn(
+                        "size-2 shrink-0 rounded-full",
+                        settings?.activeWorkspaceId === w.id ? "bg-emerald-500" : "bg-transparent"
+                      )}
+                      aria-hidden
+                    />
                     <span className="flex-1 truncate">{w.name}</span>
                     <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
                       {count}

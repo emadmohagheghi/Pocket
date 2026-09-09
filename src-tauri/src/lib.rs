@@ -23,6 +23,7 @@ use storage::Store;
 pub fn run() {
     install_panic_logger();
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             commands::show_main_window(app);
         }))
@@ -109,6 +110,8 @@ pub fn run() {
             commands::get_items,
             commands::get_storage_info,
             commands::open_data_folder,
+            commands::export_backup,
+            commands::import_backup,
             commands::create_workspace,
             commands::rename_workspace,
             commands::delete_workspace,

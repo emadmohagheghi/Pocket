@@ -2,6 +2,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
 use serde::Serialize;
+use std::path::PathBuf;
 use std::str::FromStr;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -96,6 +97,64 @@ pub fn open_data_folder(app: AppHandle) -> AppResult<()> {
         .open_path(dir.to_string_lossy().to_string(), None::<&str>)
         .map_err(|e| AppError::Storage(format!("could not open data folder: {e}")))?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn export_backup(app: AppHandle, path: String) -> AppResult<ExportSummary> {
+    if path.trim().is_empty() {
+        return Err(AppError::Invalid("export path cannot be empty".into()));
+    }
+    let destination = PathBuf::from(path);
+    if destination.file_name().is_none() {
+        return Err(AppError::Invalid("export path must include a file name".into()));
+    }
+
+    let (prepared, summary) = {
+        let store = app.state::<Mutex<Store>>();
+        let store = store.lock().unwrap();
+        store.prepare_backup(&destination)?
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        Store::write_backup_archive(&destination, prepared)
+    })
+    .await
+    .map_err(|e| AppError::Storage(format!("could not finish export: {e}")))??;
+    Ok(summary)
+}
+
+#[tauri::command]
+pub async fn import_backup(app: AppHandle, path: String) -> AppResult<ImportSummary> {
+    if path.trim().is_empty() {
+        return Err(AppError::Invalid("import path cannot be empty".into()));
+    }
+    let source = PathBuf::from(path);
+    if source.file_name().is_none() {
+        return Err(AppError::Invalid("import path must include a file name".into()));
+    }
+
+    let import_app = app.clone();
+    let summary = tauri::async_runtime::spawn_blocking(move || {
+        let state = import_app.state::<Mutex<Store>>();
+        let mut store = state.lock().unwrap();
+        let mut merged = store.clone();
+        let summary = merged.import_backup_archive(&source)?;
+        *store = merged;
+        Ok::<ImportSummary, AppError>(summary)
+    })
+    .await
+    .map_err(|e| AppError::Storage(format!("could not finish import: {e}")))??;
+
+    let active_id = {
+        app.state::<Mutex<Store>>()
+            .lock()
+            .unwrap()
+            .settings
+            .active_workspace_id
+            .clone()
+    };
+    items_changed(&app, &active_id);
+    crate::tray::refresh_tray(&app);
+    Ok(summary)
 }
 
 // ---------------------------------------------------------------- workspaces

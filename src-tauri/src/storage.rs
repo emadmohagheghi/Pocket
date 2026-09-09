@@ -1,13 +1,57 @@
-use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::fs::{self, File};
+use std::io::{Read, Seek};
+use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::error::{AppError, AppResult};
 use crate::fsutil;
 use crate::models::*;
 
+const BACKUP_FORMAT_VERSION: u32 = 2;
+const BACKUP_MANIFEST_NAME: &str = "backup.json";
+const MAX_BACKUP_MANIFEST_BYTES: u64 = 50 * 1024 * 1024;
+const MAX_RECORDING_BYTES: u64 = 100 * 1024 * 1024;
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BackupDocument {
+    format_version: u32,
+    scope: String,
+    voice_files: String,
+    exported_at: i64,
+    app_version: String,
+    settings: Settings,
+    workspaces: Vec<BackupWorkspace>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BackupWorkspace {
+    #[serde(flatten)]
+    meta: WorkspaceMeta,
+    items: Vec<Item>,
+    recordings: Vec<BackupRecording>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BackupRecording {
+    #[serde(flatten)]
+    recording: Recording,
+    archive_path: Option<String>,
+}
+
+pub(crate) struct PreparedBackup {
+    document: BackupDocument,
+    audio_files: Vec<(PathBuf, String)>,
+}
+
+#[derive(Clone)]
 pub struct Store {
     pub data_dir: PathBuf,
     pub uses_fallback_location: bool,
@@ -180,6 +224,211 @@ impl Store {
             .iter()
             .filter_map(|w| self.workspace_info(&w.id).ok())
             .collect()
+    }
+
+    pub(crate) fn prepare_backup(
+        &self,
+        destination: &std::path::Path,
+    ) -> AppResult<(PreparedBackup, ExportSummary)> {
+        let mut item_count = 0;
+        let mut recording_count = 0;
+        let mut missing_audio = 0;
+        let mut audio_files = Vec::new();
+        let mut workspaces = Vec::with_capacity(self.workspaces.len());
+
+        for meta in &self.workspaces {
+            let data = self.workspace_data(&meta.id)?;
+            item_count += data.items.len();
+            recording_count += data.recordings.len();
+
+            let recordings = data
+                .recordings
+                .iter()
+                .cloned()
+                .map(|recording| {
+                    let stored_path = self.recording_path(&meta.id, &recording.file);
+                    let archive_path = if stored_path.is_file() {
+                        let archive_path = backup_audio_path(&meta.id, &recording.file);
+                        audio_files.push((stored_path, archive_path.clone()));
+                        Some(archive_path)
+                    } else {
+                        missing_audio += 1;
+                        None
+                    };
+                    BackupRecording {
+                        recording,
+                        archive_path,
+                    }
+                })
+                .collect();
+
+            workspaces.push(BackupWorkspace {
+                meta: meta.clone(),
+                items: data.items.clone(),
+                recordings,
+            });
+        }
+
+        let summary = ExportSummary {
+            path: destination.to_string_lossy().into_owned(),
+            workspaces: workspaces.len(),
+            items: item_count,
+            recordings: recording_count,
+            audio_files: audio_files.len(),
+            missing_audio,
+        };
+        let document = BackupDocument {
+            format_version: BACKUP_FORMAT_VERSION,
+            scope: "allWorkspaces".into(),
+            voice_files: "embeddedInArchive".into(),
+            exported_at: now_ms(),
+            app_version: env!("CARGO_PKG_VERSION").into(),
+            settings: self.settings.clone(),
+            workspaces,
+        };
+        Ok((PreparedBackup { document, audio_files }, summary))
+    }
+
+    pub(crate) fn write_backup_archive(
+        destination: &Path,
+        prepared: PreparedBackup,
+    ) -> AppResult<()> {
+        let parent = destination.parent().ok_or_else(|| {
+            AppError::Invalid("export path has no parent directory".into())
+        })?;
+        fs::create_dir_all(parent)?;
+        let file_name = destination
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "pocket-backup.zip".into());
+        let temporary = parent.join(format!(".{file_name}.tmp"));
+
+        let result = (|| -> AppResult<()> {
+            let output = File::create(&temporary)?;
+            let mut archive = ZipWriter::new(output);
+            let options = SimpleFileOptions::default()
+                .compression_method(CompressionMethod::Stored);
+
+            archive
+                .start_file(BACKUP_MANIFEST_NAME, options)
+                .map_err(|e| backup_archive_error("could not write manifest", e))?;
+            serde_json::to_writer_pretty(&mut archive, &prepared.document)?;
+
+            for (source, archive_path) in prepared.audio_files {
+                archive
+                    .start_file(&archive_path, options)
+                    .map_err(|e| backup_archive_error("could not add audio file", e))?;
+                let mut input = File::open(&source).map_err(|e| {
+                    AppError::Storage(format!(
+                        "could not read recording {}: {e}",
+                        source.display()
+                    ))
+                })?;
+                std::io::copy(&mut input, &mut archive)?;
+            }
+
+            let output = archive
+                .finish()
+                .map_err(|e| backup_archive_error("could not finish backup", e))?;
+            output.sync_all()?;
+            fs::rename(&temporary, destination)?;
+            Ok(())
+        })();
+
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        result
+    }
+
+    pub(crate) fn import_backup_archive(&mut self, source: &Path) -> AppResult<ImportSummary> {
+        let input = File::open(source)?;
+        let mut archive = ZipArchive::new(input)
+            .map_err(|e| backup_archive_error("invalid ZIP backup", e))?;
+        let document = read_backup_manifest(&mut archive)?;
+        validate_backup(&document, &mut archive)?;
+
+        let mut summary = ImportSummary {
+            workspaces_created: 0,
+            workspaces_merged: 0,
+            items_imported: 0,
+            items_skipped: 0,
+            recordings_imported: 0,
+            recordings_skipped: 0,
+            audio_files_restored: 0,
+            missing_audio: 0,
+        };
+        let mut changed_workspaces = HashSet::new();
+
+        for workspace in document.workspaces {
+            let workspace_id = workspace.meta.id.clone();
+            if self.workspaces.iter().any(|meta| meta.id == workspace_id) {
+                summary.workspaces_merged += 1;
+            } else {
+                self.workspaces.push(workspace.meta.clone());
+                self.data
+                    .insert(workspace_id.clone(), WorkspaceData::default());
+                summary.workspaces_created += 1;
+                changed_workspaces.insert(workspace_id.clone());
+            }
+
+            for item in workspace.items {
+                let exists = self.data[&workspace_id]
+                    .items
+                    .iter()
+                    .any(|existing| existing.id == item.id);
+                if exists {
+                    summary.items_skipped += 1;
+                } else {
+                    self.data.get_mut(&workspace_id).unwrap().items.push(item);
+                    summary.items_imported += 1;
+                    changed_workspaces.insert(workspace_id.clone());
+                }
+            }
+
+            for backup_recording in workspace.recordings {
+                let existing = self.data[&workspace_id]
+                    .recordings
+                    .iter()
+                    .find(|recording| recording.id == backup_recording.recording.id)
+                    .cloned();
+                let destination_file = existing
+                    .as_ref()
+                    .map(|recording| recording.file.clone())
+                    .unwrap_or_else(|| backup_recording.recording.file.clone());
+                let destination = self.recording_path(&workspace_id, &destination_file);
+
+                if !destination.is_file() {
+                    if let Some(archive_path) = &backup_recording.archive_path {
+                        extract_backup_audio(&mut archive, archive_path, &destination)?;
+                        summary.audio_files_restored += 1;
+                    } else {
+                        summary.missing_audio += 1;
+                        if existing.is_none() {
+                            continue;
+                        }
+                    }
+                }
+
+                if existing.is_some() {
+                    summary.recordings_skipped += 1;
+                } else {
+                    self.data
+                        .get_mut(&workspace_id)
+                        .unwrap()
+                        .recordings
+                        .push(backup_recording.recording);
+                    summary.recordings_imported += 1;
+                    changed_workspaces.insert(workspace_id.clone());
+                }
+            }
+        }
+
+        self.persist_index();
+        for workspace_id in changed_workspaces {
+            self.persist_workspace(&workspace_id);
+        }
+        Ok(summary)
     }
 
     pub fn create_workspace(&mut self, name: &str) -> AppResult<WorkspaceInfo> {
@@ -464,6 +713,141 @@ impl Store {
 
 // ------------------------------------------------------------------- helpers
 
+fn backup_audio_path(workspace_id: &str, file: &str) -> String {
+    format!("audio/{workspace_id}/{file}")
+}
+
+fn backup_archive_error(context: &str, error: impl std::fmt::Display) -> AppError {
+    AppError::Storage(format!("{context}: {error}"))
+}
+
+fn read_backup_manifest<R: Read + Seek>(archive: &mut ZipArchive<R>) -> AppResult<BackupDocument> {
+    let mut manifest = archive
+        .by_name(BACKUP_MANIFEST_NAME)
+        .map_err(|e| backup_archive_error("backup.json is missing", e))?;
+    if manifest.size() > MAX_BACKUP_MANIFEST_BYTES {
+        return Err(AppError::Invalid("backup manifest is too large".into()));
+    }
+    let mut json = String::with_capacity(manifest.size() as usize);
+    manifest.read_to_string(&mut json)?;
+    serde_json::from_str(&json).map_err(AppError::from)
+}
+
+fn validate_backup<R: Read + Seek>(
+    document: &BackupDocument,
+    archive: &mut ZipArchive<R>,
+) -> AppResult<()> {
+    if document.format_version != BACKUP_FORMAT_VERSION {
+        return Err(AppError::Invalid(format!(
+            "unsupported backup version {}",
+            document.format_version
+        )));
+    }
+    if document.scope != "allWorkspaces" || document.voice_files != "embeddedInArchive" {
+        return Err(AppError::Invalid("not a portable Pocket backup".into()));
+    }
+    if document.workspaces.is_empty() {
+        return Err(AppError::Invalid("backup contains no workspaces".into()));
+    }
+
+    let mut workspace_ids = HashSet::new();
+    for workspace in &document.workspaces {
+        if !fsutil::valid_id(&workspace.meta.id) || !workspace_ids.insert(&workspace.meta.id) {
+            return Err(AppError::Invalid(
+                "backup contains an invalid or duplicate workspace id".into(),
+            ));
+        }
+        let workspace_name = workspace.meta.name.trim();
+        if workspace_name.is_empty() || workspace_name.len() > 64 {
+            return Err(AppError::Invalid(
+                "backup contains an invalid workspace name".into(),
+            ));
+        }
+
+        let mut item_ids = HashSet::new();
+        for item in &workspace.items {
+            if !fsutil::valid_id(&item.id) || !item_ids.insert(&item.id) {
+                return Err(AppError::Invalid(
+                    "backup contains an invalid or duplicate item id".into(),
+                ));
+            }
+            if item.content.trim().is_empty() {
+                return Err(AppError::Invalid(
+                    "backup contains an empty text item".into(),
+                ));
+            }
+        }
+
+        let mut recording_ids = HashSet::new();
+        for backup_recording in &workspace.recordings {
+            let recording = &backup_recording.recording;
+            if !fsutil::valid_id(&recording.id) || !recording_ids.insert(&recording.id) {
+                return Err(AppError::Invalid(
+                    "backup contains an invalid or duplicate recording id".into(),
+                ));
+            }
+            if !fsutil::valid_file_name(&recording.file) || !recording.file.ends_with(".webm") {
+                return Err(AppError::Invalid(
+                    "backup contains an invalid recording file name".into(),
+                ));
+            }
+            if recording.size_bytes > MAX_RECORDING_BYTES {
+                return Err(AppError::Invalid(
+                    "backup contains an oversized recording".into(),
+                ));
+            }
+            if let Some(archive_path) = &backup_recording.archive_path {
+                let expected = backup_audio_path(&workspace.meta.id, &recording.file);
+                if archive_path != &expected {
+                    return Err(AppError::Invalid(
+                        "backup contains an unsafe audio path".into(),
+                    ));
+                }
+                let entry = archive
+                    .by_name(archive_path)
+                    .map_err(|e| backup_archive_error("backup audio file is missing", e))?;
+                if !entry.is_file() || entry.size() != recording.size_bytes {
+                    return Err(AppError::Invalid(
+                        "backup audio metadata does not match its file".into(),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn extract_backup_audio<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    archive_path: &str,
+    destination: &Path,
+) -> AppResult<()> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| AppError::Invalid("recording path has no parent".into()))?;
+    fs::create_dir_all(parent)?;
+    let file_name = destination
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "recording.webm".into());
+    let temporary = parent.join(format!(".{file_name}.importing"));
+
+    let result = (|| -> AppResult<()> {
+        let mut entry = archive
+            .by_name(archive_path)
+            .map_err(|e| backup_archive_error("backup audio file is missing", e))?;
+        let mut output = File::create(&temporary)?;
+        std::io::copy(&mut entry, &mut output)?;
+        output.sync_all()?;
+        fs::rename(&temporary, destination)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
 /// Canonical per-workspace data file path (shared by load and save).
 fn self_path(data_dir: &std::path::Path, ws_id: &str) -> PathBuf {
     data_dir
@@ -678,6 +1062,65 @@ mod tests {
         assert!(path.exists());
         store.delete_recording(&ws.meta.id, &rec.id).unwrap();
         assert!(!path.exists());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn portable_backup_roundtrip_includes_audio_and_deduplicates_imports() {
+        let (mut store, dir) = test_store();
+        let first_id = store.workspaces[0].id.clone();
+        store
+            .create_item(
+                &first_id,
+                NewItem {
+                    item_type: ItemType::Text,
+                    content: "first workspace item".into(),
+                    title: None,
+                    url: None,
+                },
+            )
+            .unwrap();
+        let second = store.create_workspace("Exported workspace").unwrap();
+        let recording = store
+            .save_recording(&second.meta.id, "Exported voice", 750, b"audio")
+            .unwrap();
+        let destination = dir.join("pocket-backup.zip");
+        let (prepared, summary) = store.prepare_backup(&destination).unwrap();
+        Store::write_backup_archive(&destination, prepared).unwrap();
+
+        assert_eq!(summary.workspaces, 2);
+        assert_eq!(summary.items, 1);
+        assert_eq!(summary.recordings, 1);
+        assert_eq!(summary.audio_files, 1);
+        assert_eq!(summary.missing_audio, 0);
+
+        let import_dir = std::env::temp_dir().join(format!("pocket-import-test-{}", Uuid::new_v4()));
+        let mut imported_store = Store::load(import_dir.clone(), false);
+        imported_store.settings.theme = "dark".into();
+        let imported = imported_store.import_backup_archive(&destination).unwrap();
+        assert_eq!(imported.workspaces_created, 2);
+        assert_eq!(imported.items_imported, 1);
+        assert_eq!(imported.recordings_imported, 1);
+        assert_eq!(imported.audio_files_restored, 1);
+        assert_eq!(imported.missing_audio, 0);
+        assert_eq!(imported_store.settings.theme, "dark");
+
+        let imported_data = imported_store.workspace_data(&second.meta.id).unwrap();
+        assert_eq!(imported_data.recordings[0].id, recording.id);
+        assert_eq!(
+            fs::read(imported_store.recording_path(&second.meta.id, &recording.file)).unwrap(),
+            b"audio"
+        );
+
+        let repeated = imported_store.import_backup_archive(&destination).unwrap();
+        assert_eq!(repeated.workspaces_created, 0);
+        assert_eq!(repeated.items_imported, 0);
+        assert_eq!(repeated.recordings_imported, 0);
+        assert_eq!(repeated.audio_files_restored, 0);
+        assert_eq!(repeated.items_skipped, 1);
+        assert_eq!(repeated.recordings_skipped, 1);
+
+        cleanup(&import_dir);
         cleanup(&dir);
     }
 }

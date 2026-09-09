@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { open as openFile, save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import {
+  Download,
   FolderOpen,
   Keyboard,
+  LoaderCircle,
   MonitorCog,
   ShieldCheck,
+  Upload,
   X,
 } from "lucide-react";
 
@@ -36,10 +40,69 @@ import type { StorageInfo } from "@/types";
 export function SettingsView() {
   const { settings, setSettings } = usePocket();
   const [storage, setStorage] = useState<StorageInfo | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     void api.getStorageInfo().then(setStorage).catch(() => {});
   }, []);
+
+  const exportBackup = async () => {
+    setExporting(true);
+    try {
+      const date = new Date().toISOString().slice(0, 10);
+      const path = await save({
+        defaultPath: `pocket-backup-${date}.zip`,
+        filters: [{ name: "Pocket backup", extensions: ["zip"] }],
+      });
+      if (!path) return;
+
+      const summary = await api.exportBackup(path);
+      if (summary.missingAudio > 0) {
+        toast.warning(
+          `Backup saved, but ${summary.missingAudio} audio file(s) were missing`
+        );
+      } else {
+        toast.success(
+          `Backup exported: ${summary.items} items, ${summary.audioFiles} audio files`
+        );
+      }
+    } catch (error) {
+      toast.error(`Could not export backup: ${String(error)}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const importBackup = async () => {
+    setImporting(true);
+    try {
+      const path = await openFile({
+        multiple: false,
+        directory: false,
+        filters: [{ name: "Pocket backup", extensions: ["zip"] }],
+      });
+      if (typeof path !== "string") return;
+
+      const summary = await api.importBackup(path);
+      const imported = summary.itemsImported + summary.recordingsImported;
+      if (imported === 0 && summary.workspacesCreated === 0) {
+        toast.info("This backup is already imported");
+      } else if (summary.missingAudio > 0) {
+        toast.warning(
+          `Imported ${imported} item(s); ${summary.missingAudio} audio file(s) were unavailable`
+        );
+      } else {
+        toast.success(
+          `Imported ${summary.itemsImported} items and ${summary.audioFilesRestored} audio files`
+        );
+      }
+    } catch (error) {
+      toast.error(`Could not import backup: ${String(error)}`);
+    } finally {
+      setImporting(false);
+    }
+  };
 
   if (!settings) return null;
 
@@ -202,6 +265,41 @@ export function SettingsView() {
             >
               <FolderOpen className="size-4" /> Open folder
             </Button>
+          </div>
+          <Separator className="my-3" />
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium">Export backup</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Export or import a portable ZIP with every workspace, item, and audio file.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                disabled={exporting || importing}
+                onClick={() => void importBackup()}
+              >
+                {importing ? (
+                  <LoaderCircle data-icon="inline-start" className="animate-spin" />
+                ) : (
+                  <Upload data-icon="inline-start" />
+                )}
+                {importing ? "Importing…" : "Import"}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={exporting || importing}
+                onClick={() => void exportBackup()}
+              >
+                {exporting ? (
+                  <LoaderCircle data-icon="inline-start" className="animate-spin" />
+                ) : (
+                  <Download data-icon="inline-start" />
+                )}
+                {exporting ? "Exporting…" : "Export"}
+              </Button>
+            </div>
           </div>
         </div>
       </Section>

@@ -141,6 +141,30 @@ pub struct StorageInfo {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ExportSummary {
+    pub path: String,
+    pub workspaces: usize,
+    pub items: usize,
+    pub recordings: usize,
+    pub audio_files: usize,
+    pub missing_audio: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSummary {
+    pub workspaces_created: usize,
+    pub workspaces_merged: usize,
+    pub items_imported: usize,
+    pub items_skipped: usize,
+    pub recordings_imported: usize,
+    pub recordings_skipped: usize,
+    pub audio_files_restored: usize,
+    pub missing_audio: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InitialState {
     pub settings: Settings,
     pub workspaces: Vec<WorkspaceInfo>,
