@@ -264,7 +264,7 @@ export function PlayerBar() {
         </p>
       </div>
       <div className="mt-2 flex items-center gap-1">
-        <BarButton label="Back 10 seconds" onClick={() => skipPlayer(-10)}>
+        <BarButton label="Back 5 seconds" onClick={() => skipPlayer(-5)}>
           <RotateCcw className="size-4" />
         </BarButton>
         <Button
@@ -279,7 +279,7 @@ export function PlayerBar() {
             <Play className="size-4" />
           )}
         </Button>
-        <BarButton label="Forward 10 seconds" onClick={() => skipPlayer(10)}>
+        <BarButton label="Forward 5 seconds" onClick={() => skipPlayer(5)}>
           <RotateCw className="size-4" />
         </BarButton>
         <input
