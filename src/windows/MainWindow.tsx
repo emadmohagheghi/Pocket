@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   FolderOpen,
   Layers,
   MoreHorizontal,
-  Search,
   Settings as SettingsIcon,
 } from "lucide-react";
 
@@ -13,7 +12,7 @@ import { AddBar, ItemList } from "@/components/ItemList";
 import { PlayerBar } from "@/components/VoiceList";
 import { SettingsDialog } from "@/components/SettingsView";
 import { WorkspacesDialog } from "@/components/WorkspaceSwitcher";
-import { SearchOverlay } from "@/components/SearchOverlay";
+import { SearchBar } from "@/components/SearchBar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -27,9 +26,9 @@ import { applyTheme } from "@/lib/theme";
 
 export default function MainWindow() {
   const { init, settings, gaming } = usePocket();
-  const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void init();
@@ -54,11 +53,11 @@ export default function MainWindow() {
         e.preventDefault();
         void api.openCapture("text").catch((err) => toast.error(String(err)));
       } else if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K")) {
-        // Ctrl+K — search.
+        // Ctrl+K — focus the persistent search field.
         e.preventDefault();
-        setSearchOpen(true);
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
       } else if (e.key === "Escape" && !typing) {
-        setSearchOpen(false);
         setSettingsOpen(false);
         setWorkspacesOpen(false);
       }
@@ -81,13 +80,7 @@ export default function MainWindow() {
         <div data-tauri-drag-region className="h-5 w-full shrink-0" aria-hidden />
         {/* Top bar: search + overflow menu. */}
         <div className="flex items-center gap-2 px-3 pb-0">
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-muted/60 px-3.5 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            <Search className="size-4 shrink-0" />
-            <span className="flex-1 truncate">Search…</span>
-          </button>
+          <SearchBar inputRef={searchInputRef} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -141,7 +134,6 @@ export default function MainWindow() {
         </div>
       </div>
 
-      <SearchOverlay open={searchOpen} onOpenChange={setSearchOpen} />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <WorkspacesDialog open={workspacesOpen} onClose={() => setWorkspacesOpen(false)} />
       {settings === null && (

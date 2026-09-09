@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  Copy,
   ExternalLink,
   Pencil,
   SquarePen,
@@ -12,6 +11,7 @@ import { usePocket } from "@/store";
 import { api } from "@/lib/api";
 import { cn, formatRelative, looksLikeUrl } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
 import type { Item } from "@/types";
 
@@ -22,13 +22,18 @@ interface Props {
 
 export function ItemRow({ item, focused }: Props) {
   const { updateItem, deleteItem } = usePocket();
+  const [isExpandable, setIsExpandable] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.content);
   const rowRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLParagraphElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
+  const pointerFocusingRef = useRef(false);
 
   useEffect(() => {
     if (focused) {
+      setExpanded(true);
       rowRef.current?.scrollIntoView({ block: "center" });
       rowRef.current?.focus();
       usePocket.getState().setFocusItem(null);
@@ -44,6 +49,49 @@ export function ItemRow({ item, focused }: Props) {
       });
     }
   }, [editing, item.content]);
+
+  useLayoutEffect(() => {
+    const preview = previewRef.current;
+    if (!preview) return;
+
+    let cancelled = false;
+    const measure = () => {
+      if (cancelled) return;
+      const overflowsTwoLines = preview.scrollHeight > preview.clientHeight + 1;
+      setIsExpandable((current) =>
+        current === overflowsTwoLines ? current : overflowsTwoLines
+      );
+      if (!overflowsTwoLines) setExpanded(false);
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(preview);
+    void document.fonts.ready.then(measure);
+
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [item.content, editing, isExpandable]);
+
+  useEffect(() => {
+    if (!expanded) return;
+
+    const collapse = () => setExpanded(false);
+    const collapseOnOutsideClick = (event: PointerEvent) => {
+      if (!rowRef.current?.contains(event.target as Node)) {
+        collapse();
+      }
+    };
+
+    document.addEventListener("pointerdown", collapseOnOutsideClick);
+    window.addEventListener("blur", collapse);
+    return () => {
+      document.removeEventListener("pointerdown", collapseOnOutsideClick);
+      window.removeEventListener("blur", collapse);
+    };
+  }, [expanded]);
 
   const copy = async () => {
     try {
@@ -69,10 +117,15 @@ export function ItemRow({ item, focused }: Props) {
       void copy();
     } else if (e.key === "e") {
       e.preventDefault();
+      if (isExpandable) setExpanded(true);
       setEditing(true);
     } else if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
       void deleteItem(item.id);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setExpanded(false);
+      rowRef.current?.blur();
     }
   };
 
@@ -81,40 +134,102 @@ export function ItemRow({ item, focused }: Props) {
   const isLink = looksLikeUrl(item.content) || (item.url !== null && looksLikeUrl(item.url));
   const linkTarget = item.url ?? item.content;
 
-  // Title / preview split: first meaningful line as the title, the rest as
-  // a dimmer secondary line — per the reference design.
-  const contentLines = item.content
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-  const title = isLink
-    ? (item.title ?? item.url ?? item.content)
-    : (item.title ?? contentLines[0] ?? "Untitled");
-  const preview = isLink
-    ? item.title
-      ? (item.url ?? null)
-      : null
-    : contentLines.length > 1
-      ? contentLines.slice(1).join(" ")
-      : null;
-
   return (
     <div
       ref={rowRef}
       role="listitem"
       tabIndex={0}
+      aria-expanded={isExpandable ? expanded : undefined}
       data-item-id={item.id}
       onKeyDown={onKeyDownRow}
+      onPointerDownCapture={() => {
+        pointerFocusingRef.current = true;
+      }}
+      onPointerUpCapture={() => {
+        pointerFocusingRef.current = false;
+      }}
+      onPointerCancelCapture={() => {
+        pointerFocusingRef.current = false;
+      }}
+      onPointerLeave={() => {
+        pointerFocusingRef.current = false;
+      }}
+      onClick={(event) => {
+        const target = event.target as HTMLElement;
+        if (target.closest("button, textarea, input, a") || !isExpandable) return;
+
+        setExpanded((current) => !current);
+        if (!rowRef.current?.contains(document.activeElement)) {
+          rowRef.current?.focus();
+        }
+      }}
+      onFocusCapture={() => {
+        if (isExpandable && !pointerFocusingRef.current) setExpanded(true);
+      }}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setExpanded(false);
+        }
+      }}
       className="group flex items-start gap-2.5 px-1 py-3 focus-visible:outline-2 focus-visible:outline-ring"
     >
       <SquarePen className="mt-0.5 size-4 shrink-0 text-muted-foreground/60" aria-hidden />
       <div className="min-w-0 flex-1">
-        {editing ? (
+        {isExpandable ? (
+          <Collapsible open={expanded} onOpenChange={setExpanded}>
+            <div className="grid min-w-0">
+              <p
+                ref={previewRef}
+                aria-hidden={expanded}
+                className={cn(
+                  "col-start-1 row-start-1 line-clamp-2 self-start whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere] transition-opacity duration-150",
+                  expanded && "pointer-events-none opacity-0",
+                  isLink && "cursor-pointer text-primary underline-offset-2 hover:underline"
+                )}
+              >
+                {item.content}
+              </p>
+
+              <CollapsibleContent
+                aria-hidden={!expanded}
+                className="col-start-1 row-start-1 min-h-0 min-w-0 self-start overflow-hidden data-[state=closed]:pointer-events-none data-[state=closed]:animate-[pocket-collapsible-up_180ms_ease-in] data-[state=open]:animate-[pocket-collapsible-down_220ms_ease-out] motion-reduce:animate-none"
+              >
+                {editing ? (
+                  <Textarea
+                    ref={editRef}
+                    value={draft}
+                    rows={1}
+                    className="min-h-0 resize-none overflow-hidden border-none bg-transparent p-0 text-sm leading-snug shadow-none [overflow-wrap:anywhere] focus-visible:ring-0"
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void saveEdit();
+                      } else if (e.key === "Escape") {
+                        setEditing(false);
+                      }
+                    }}
+                    onBlur={() => void saveEdit()}
+                  />
+                ) : (
+                  <p
+                    className={cn(
+                      "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
+                      isLink && "cursor-pointer text-primary underline-offset-2 hover:underline"
+                    )}
+                  >
+                    {item.content}
+                  </p>
+                )}
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
+        ) : editing ? (
           <Textarea
             ref={editRef}
             value={draft}
-            rows={Math.min(8, Math.max(2, draft.split("\n").length))}
-            className="min-h-0 resize-none border-none bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
+            rows={1}
+            className="min-h-0 resize-none overflow-hidden border-none bg-transparent p-0 text-sm leading-snug shadow-none [overflow-wrap:anywhere] focus-visible:ring-0"
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -127,24 +242,15 @@ export function ItemRow({ item, focused }: Props) {
             onBlur={() => void saveEdit()}
           />
         ) : (
-          <>
-            <p
-              className={cn(
-                "truncate text-sm font-normal leading-snug text-foreground",
-                isLink && "cursor-pointer text-primary underline-offset-2 hover:underline"
-              )}
-              onClick={() => {
-                if (isLink) void api.openUrl(linkTarget).catch(() => {});
-              }}
-            >
-              {title}
-            </p>
-            {preview && (
-              <p className="mt-0.5 truncate text-xs leading-relaxed text-muted-foreground">
-                {preview}
-              </p>
+          <p
+            ref={previewRef}
+            className={cn(
+              "line-clamp-2 whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
+              isLink && "text-primary underline-offset-2"
             )}
-          </>
+          >
+            {item.content}
+          </p>
         )}
         <p className="mt-1 text-[11px] text-muted-foreground/70">
           {formatRelative(item.createdAt)}
@@ -159,11 +265,13 @@ export function ItemRow({ item, focused }: Props) {
               onClick={() => void api.openUrl(linkTarget).catch(() => {})}
             />
           ) : null}
-          <RowButton label="Copy" icon={<Copy className="size-3.5" />} onClick={() => void copy()} />
           <RowButton
             label="Edit"
             icon={<Pencil className="size-3.5" />}
-            onClick={() => setEditing(true)}
+            onClick={() => {
+              if (isExpandable) setExpanded(true);
+              setEditing(true);
+            }}
           />
           <RowButton
             label="Delete"

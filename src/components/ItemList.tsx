@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 
 import { usePocket } from "@/store";
 import type { Item, Recording } from "@/types";
 import { ItemRow } from "@/components/ItemRow";
 import { VoiceRow } from "@/components/VoiceList";
+import { Input } from "@/components/ui/input";
 
 /** Small uppercase muted section label. */
 export function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -100,52 +101,45 @@ export function ItemList() {
 export function AddBar() {
   const { createItem } = usePocket();
   const [value, setValue] = useState("");
-  const [open, setOpen] = useState(false);
+  const inputId = useId();
 
   const save = async () => {
     const text = value.trim();
     if (!text) {
       setValue("");
-      setOpen(false);
       return;
     }
     const created = await createItem(text);
     if (created) {
       setValue("");
-      setOpen(false);
     }
   };
 
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-2.5 rounded-full border border-border/60 bg-muted/50 px-3.5 py-2.5 text-left text-[13px] text-muted-foreground/70 transition-colors hover:bg-muted hover:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
-      >
-        <Plus className="size-4 shrink-0" />
-        Add a note or a prompt…
-      </button>
-    );
-  }
-
   return (
-    <div className="flex items-center gap-2.5 rounded-full border border-border/60 bg-muted/50 px-3.5 py-2">
-      <input
-        autoFocus
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") void save();
-          else if (e.key === "Escape") {
-            setValue("");
-            setOpen(false);
-          }
-        }}
-        onBlur={() => void save()}
-        placeholder="Type something, Enter to save…"
-        aria-label="Add a text item"
-        className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
-      />
-    </div>
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      <label
+        htmlFor={inputId}
+        className="flex items-center gap-2.5 rounded-full border border-border/60 bg-muted/50 px-3.5 py-2 transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/50"
+      >
+        <Plus className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <Input
+          id={inputId}
+          value={value}
+          type="text"
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setValue("");
+          }}
+          placeholder="Add a note or a prompt…"
+          aria-label="Add a text item"
+          className="h-auto border-0 !bg-transparent p-0 text-sm shadow-none focus-visible:border-0 focus-visible:ring-0"
+        />
+      </label>
+    </form>
   );
 }
