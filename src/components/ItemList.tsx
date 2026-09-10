@@ -206,6 +206,7 @@ export function AddBar() {
                 id={inputId}
                 value={value}
                 type="text"
+                autoComplete="off"
                 onChange={(event) => setValue(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") setValue("");

@@ -95,6 +95,7 @@ export function SearchBar({ inputRef }: SearchBarProps) {
             ref={inputRef}
             type="search"
             value={query}
+            autoComplete="off"
             placeholder="Search text and voice…"
             aria-label="Search text and voice"
             role="combobox"

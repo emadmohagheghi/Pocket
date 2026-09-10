@@ -81,6 +81,7 @@ pub fn run() {
                 if let Some(win) = handle.get_webview_window(label) {
                     grant_microphone_permission(&win);
                     disable_browser_accelerators(&win);
+                    disable_browser_autofill(&win);
                 }
             }
 
@@ -222,6 +223,30 @@ fn disable_browser_accelerators(window: &tauri::WebviewWindow) {
 
 #[cfg(not(windows))]
 fn disable_browser_accelerators(_window: &tauri::WebviewWindow) {}
+
+/// WebView2's general autofill pops a "Saved info" suggestions dropdown over
+/// the capture/search inputs (fed by previously typed values). Pocket never
+/// wants form autofill, anywhere.
+#[cfg(windows)]
+fn disable_browser_autofill(window: &tauri::WebviewWindow) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::*;
+    let _ = window.with_webview(move |webview| {
+        let controller = webview.controller();
+        let Ok(core) = (unsafe { controller.CoreWebView2() }) else { return };
+        let Ok(settings) = (unsafe { core.Settings() }) else { return };
+        let Ok(settings9) = windows::core::Interface::cast::<ICoreWebView2Settings9>(&settings)
+        else {
+            eprintln!("[pocket] ICoreWebView2Settings9 unavailable; autofill untouched");
+            return;
+        };
+        unsafe {
+            let _ = settings9.SetIsGeneralAutofillEnabled(false);
+        }
+        eprintln!("[pocket] browser autofill disabled");
+    });
+}
+#[cfg(not(windows))]
+fn disable_browser_autofill(_window: &tauri::WebviewWindow) {}
 
 /// Grants microphone access on the WebView2 layer so voice recording works
 /// without a per-session permission prompt (WebView2 does not persist these).
