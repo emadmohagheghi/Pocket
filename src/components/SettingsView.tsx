@@ -19,6 +19,10 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -32,6 +36,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { StorageInfo } from "@/types";
+
+const NOTE_PREVIEW_OPTIONS = [
+  { value: "1", label: "1", ariaLabel: "1 line" },
+  { value: "2", label: "2", ariaLabel: "2 lines" },
+  { value: "3", label: "3", ariaLabel: "3 lines" },
+  { value: "4", label: "4", ariaLabel: "4 lines" },
+  { value: "5", label: "5", ariaLabel: "5 lines" },
+  { value: "6", label: "6", ariaLabel: "6 lines" },
+  { value: "0", label: "Full", ariaLabel: "Show full note" },
+] as const;
 
 export function SettingsView() {
   const { settings, setSettings } = usePocket();
@@ -130,6 +144,29 @@ export function SettingsView() {
               <SelectItem value="dark">Dark</SelectItem>
             </SelectContent>
           </Select>
+        </Row>
+        <Row label="Note preview">
+          <ToggleGroup
+            type="single"
+            size="sm"
+            variant="outline"
+            spacing={0}
+            value={String(settings.notePreviewLines)}
+            aria-label="Note preview line limit"
+            onValueChange={(value) => {
+              if (value) void setSettings({ notePreviewLines: Number(value) });
+            }}
+          >
+            {NOTE_PREVIEW_OPTIONS.map((option) => (
+              <ToggleGroupItem
+                key={option.value}
+                value={option.value}
+                aria-label={option.ariaLabel}
+              >
+                {option.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
         </Row>
         <Row
           label="Gaming mode"

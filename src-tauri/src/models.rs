@@ -72,6 +72,7 @@ pub struct Settings {
     pub active_workspace_id: String,
     pub gaming_detection_enabled: bool,
     pub theme: String,
+    pub note_preview_lines: u8,
 }
 
 impl Default for Settings {
@@ -82,6 +83,7 @@ impl Default for Settings {
             active_workspace_id: String::new(),
             gaming_detection_enabled: true,
             theme: "system".into(),
+            note_preview_lines: 5,
         }
     }
 }
@@ -93,6 +95,7 @@ pub struct SettingsPatch {
     pub start_minimized: Option<bool>,
     pub gaming_detection_enabled: Option<bool>,
     pub theme: Option<String>,
+    pub note_preview_lines: Option<u8>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -169,5 +172,16 @@ mod tests {
     #[test]
     fn fresh_install_starts_with_the_main_window_visible() {
         assert!(!Settings::default().start_minimized);
+    }
+
+    #[test]
+    fn note_preview_defaults_to_five_lines() {
+        assert_eq!(Settings::default().note_preview_lines, 5);
+    }
+
+    #[test]
+    fn old_settings_files_gain_the_note_preview_default() {
+        let settings: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert_eq!(settings.note_preview_lines, 5);
     }
 }

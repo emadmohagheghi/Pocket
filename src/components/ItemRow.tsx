@@ -28,7 +28,7 @@ interface Props {
 }
 
 export function ItemRow({ item, focused }: Props) {
-  const { updateItem, deleteItem } = usePocket();
+  const { updateItem, deleteItem, settings } = usePocket();
   const [isExpandable, setIsExpandable] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -36,6 +36,12 @@ export function ItemRow({ item, focused }: Props) {
   const rowRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLParagraphElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
+  const previewLineLimit = settings?.notePreviewLines ?? 5;
+  const collapseEnabled = previewLineLimit > 0;
+  const canCollapse = collapseEnabled && isExpandable;
+  const previewStyle = collapseEnabled
+    ? { WebkitLineClamp: previewLineLimit }
+    : undefined;
 
   useEffect(() => {
     if (focused) {
@@ -56,6 +62,12 @@ export function ItemRow({ item, focused }: Props) {
   }, [editing, item.content]);
 
   useLayoutEffect(() => {
+    if (!collapseEnabled) {
+      setIsExpandable(false);
+      setExpanded(false);
+      return;
+    }
+
     const preview = previewRef.current;
     if (!preview) return;
 
@@ -78,7 +90,7 @@ export function ItemRow({ item, focused }: Props) {
       cancelled = true;
       observer.disconnect();
     };
-  }, [item.content, editing, isExpandable]);
+  }, [collapseEnabled, editing, isExpandable, item.content, previewLineLimit]);
 
   useEffect(() => {
     if (!expanded || editing) return;
@@ -125,9 +137,9 @@ export function ItemRow({ item, focused }: Props) {
       void copy();
     } else if (e.key === "e") {
       e.preventDefault();
-      if (isExpandable) setExpanded(true);
+      if (canCollapse) setExpanded(true);
       setEditing(true);
-    } else if (e.key === "Enter" && isExpandable) {
+    } else if (e.key === "Enter" && canCollapse) {
       e.preventDefault();
       setExpanded((current) => !current);
     } else if (e.key === "Delete" || e.key === "Backspace") {
@@ -150,7 +162,7 @@ export function ItemRow({ item, focused }: Props) {
       ref={rowRef}
       role="listitem"
       tabIndex={0}
-      aria-expanded={isExpandable ? expanded : undefined}
+      aria-expanded={canCollapse ? expanded : undefined}
       data-tauri-drag-region="deep"
       data-item-id={item.id}
       onKeyDown={onKeyDownRow}
@@ -160,14 +172,15 @@ export function ItemRow({ item, focused }: Props) {
         <SquarePen className="size-4 text-muted-foreground/60" aria-hidden />
       </div>
       <div className="min-w-0 flex-1">
-        {isExpandable ? (
+        {canCollapse ? (
           <Collapsible open={expanded} onOpenChange={setExpanded}>
             <div className="grid min-w-0">
               <p
                 ref={previewRef}
                 aria-hidden={expanded}
+                style={previewStyle}
                 className={cn(
-                  "col-start-1 row-start-1 line-clamp-5 self-start whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere] transition-opacity duration-150",
+                  "col-start-1 row-start-1 self-start overflow-hidden whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [overflow-wrap:anywhere] transition-opacity duration-150",
                   expanded && "pointer-events-none opacity-0",
                   isLink && "text-primary underline-offset-2 hover:underline"
                 )}
@@ -250,15 +263,17 @@ export function ItemRow({ item, focused }: Props) {
         ) : (
           <p
             ref={previewRef}
+            style={previewStyle}
             className={cn(
-              "line-clamp-5 whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
+              "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
+              collapseEnabled && "overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical]",
               isLink && "text-primary underline-offset-2 hover:underline"
             )}
           >
             {item.content}
           </p>
         )}
-        {!isExpandable ? (
+        {!canCollapse ? (
           <p className="mt-1 text-[11px] text-muted-foreground/70">
             {formatRelative(item.createdAt)}
           </p>
@@ -282,7 +297,7 @@ export function ItemRow({ item, focused }: Props) {
           label="Edit"
           icon={<Pencil className="size-3.5" />}
           onClick={() => {
-            if (isExpandable) setExpanded(true);
+            if (canCollapse) setExpanded(true);
             setEditing(true);
           }}
         />

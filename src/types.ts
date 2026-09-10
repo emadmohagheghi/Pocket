@@ -43,6 +43,8 @@ export interface Settings {
   activeWorkspaceId: string;
   gamingDetectionEnabled: boolean;
   theme: "system" | "light" | "dark";
+  /** 0 shows the full note; 1–6 sets the collapsed preview height. */
+  notePreviewLines: number;
 }
 
 export interface StorageInfo {

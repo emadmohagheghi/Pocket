@@ -521,6 +521,15 @@ pub fn update_settings(app: AppHandle, patch: SettingsPatch) -> AppResult<Settin
                 ));
             }
         }
+        if let Some(v) = patch.note_preview_lines {
+            if v <= 6 {
+                s.note_preview_lines = v;
+            } else {
+                return Err(AppError::Invalid(
+                    "note preview lines must be between 0 and 6".into(),
+                ));
+            }
+        }
         let settings = s.clone();
         guard.persist_settings();
         (settings, patch.launch_on_startup.is_some())
