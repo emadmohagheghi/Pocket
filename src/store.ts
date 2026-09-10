@@ -72,6 +72,10 @@ interface PocketStore {
 export const activeWorkspaceId = (s: PocketStore): string =>
   s.settings?.activeWorkspaceId ?? "";
 
+// React StrictMode intentionally remounts effects in development. Keep app
+// initialization process-wide so listeners and initial reads only run once.
+let initPromise: Promise<void> | null = null;
+
 export const usePocket = create<PocketStore>((set, get) => ({
   ready: false,
   settings: null,
@@ -85,43 +89,52 @@ export const usePocket = create<PocketStore>((set, get) => ({
   playerDuration: 0,
   playerSeekRequest: null,
 
-  init: async () => {
-    // Backend → frontend event wiring (registered once).
-    await listen<StateChangedPayload>("state-changed", (e) => {
-      const prevActive = get().settings?.activeWorkspaceId;
-      const { settings, workspaces } = e.payload;
-      set({ settings, workspaces });
-      if (settings.activeWorkspaceId !== prevActive) {
-        void get().refreshItems();
-      }
-    });
-    await listen<{ workspaceId: string; data: WorkspaceData }>(
-      "items-changed",
-      (e) => {
-        if (e.payload.workspaceId === get().settings?.activeWorkspaceId) {
-          set({ data: e.payload.data });
-        }
-      }
-    );
-    await listen<boolean>("gaming-mode-changed", (e) => set({ gaming: e.payload }));
+  init: () => {
+    if (initPromise) return initPromise;
 
-    try {
-      const initial = await api.getState();
-      set({
-        settings: initial.settings,
-        workspaces: initial.workspaces,
-      });
-      await get().refreshItems();
-      set({ ready: true });
-    } catch (e) {
-      toast.error(`Failed to load data: ${errMessage(e)}`);
-      set({ ready: true });
-    }
+    initPromise = (async () => {
+      try {
+        // Backend → frontend event wiring. Register all independent listeners
+        // together and only once, including under React StrictMode.
+        await Promise.all([
+          listen<StateChangedPayload>("state-changed", (e) => {
+            const prevActive = get().settings?.activeWorkspaceId;
+            const { settings, workspaces } = e.payload;
+            set({ settings, workspaces });
+            if (settings.activeWorkspaceId !== prevActive) {
+              void get().refreshItems();
+            }
+          }),
+          listen<{ workspaceId: string; data: WorkspaceData }>(
+            "items-changed",
+            (e) => {
+              if (e.payload.workspaceId === get().settings?.activeWorkspaceId) {
+                set({ data: e.payload.data });
+              }
+            }
+          ),
+          listen<boolean>("gaming-mode-changed", (e) => set({ gaming: e.payload })),
+        ]);
 
-    void api
-      .getGamingState()
-      .then((g) => set({ gaming: g }))
-      .catch(() => {});
+        const initial = await api.getState();
+        set({
+          settings: initial.settings,
+          workspaces: initial.workspaces,
+        });
+        await get().refreshItems();
+      } catch (e) {
+        toast.error(`Failed to load data: ${errMessage(e)}`);
+      } finally {
+        set({ ready: true });
+      }
+
+      void api
+        .getGamingState()
+        .then((g) => set({ gaming: g }))
+        .catch(() => {});
+    })();
+
+    return initPromise;
   },
 
   setFocusItem: (focusItemId) => set({ focusItemId }),

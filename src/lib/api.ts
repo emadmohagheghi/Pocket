@@ -18,6 +18,7 @@ export type CaptureMode = "text" | "voice";
 
 export const api = {
   getState: () => invoke<InitialState>("get_state"),
+  frontendReady: () => invoke<void>("frontend_ready"),
   getItems: (workspaceId: string) =>
     invoke<WorkspaceData>("get_items", { workspaceId }),
 

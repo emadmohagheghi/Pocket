@@ -33,7 +33,9 @@ export default function MainWindow() {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    void init();
+    void init()
+      .then(() => api.frontendReady())
+      .catch((err) => toast.error(String(err)));
   }, [init]);
 
   useEffect(() => {
@@ -147,14 +149,6 @@ export default function MainWindow() {
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <WorkspacesDialog open={workspacesOpen} onClose={() => setWorkspacesOpen(false)} />
-      {settings === null && (
-        <div className="fixed inset-3 grid place-items-center rounded-3xl bg-background/80">
-          <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
-            Loading Pocket…
-          </div>
-        </div>
-      )}
     </div>
   );
 }

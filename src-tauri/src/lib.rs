@@ -36,6 +36,8 @@ pub fn run() {
         .register_uri_scheme_protocol("voice", voice_protocol)
         .manage(AppFlags {
             gaming: std::sync::atomic::AtomicBool::new(false),
+            frontend_ready: std::sync::atomic::AtomicBool::new(false),
+            show_requested: std::sync::atomic::AtomicBool::new(false),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -43,7 +45,6 @@ pub fn run() {
             let (data_dir, fallback) = resolve_data_dir(&handle);
             eprintln!("[pocket] data directory: {}", data_dir.display());
             let store = Store::load(data_dir, fallback);
-            let settings = store.settings.clone();
             app.manage(Mutex::new(store));
 
             // Keep OS autostart in sync with the persisted preference.
@@ -55,13 +56,6 @@ pub fn run() {
             // Fixed gestures: double-shift hook (text on tap, voice on hold).
             shortcuts::double_shift::spawn(handle.clone());
             gaming::spawn(handle.clone());
-
-            // Honor "start minimized".
-            if settings.start_minimized {
-                if let Some(win) = handle.get_webview_window("main") {
-                    let _ = win.hide();
-                }
-            }
 
             // Voice notes use getUserMedia; WebView2 denies media permission
             // requests by default, so grant microphone access for our own
@@ -92,6 +86,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_state,
+            commands::frontend_ready,
             commands::get_items,
             commands::get_storage_info,
             commands::open_data_folder,

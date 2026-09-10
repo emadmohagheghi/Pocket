@@ -161,3 +161,13 @@ pub struct InitialState {
     pub workspaces: Vec<WorkspaceInfo>,
     pub storage: StorageInfo,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Settings;
+
+    #[test]
+    fn fresh_install_starts_with_the_main_window_visible() {
+        assert!(!Settings::default().start_minimized);
+    }
+}

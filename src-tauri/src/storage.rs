@@ -141,6 +141,9 @@ impl Store {
             store.settings.active_workspace_id = ws.id.clone();
             store.persist_index();
             store.persist_workspace(&ws.id);
+            // Persist the complete first-run defaults as part of the same
+            // initialization, including startMinimized=false.
+            store.persist_settings();
         }
         if !store
             .workspaces

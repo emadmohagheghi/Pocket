@@ -49,12 +49,46 @@ fn items_changed(app: &AppHandle, ws_id: &str) {
     }
 }
 
-pub fn show_main_window(app: &AppHandle) {
+fn show_main_window_now(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
         let _ = win.unminimize();
         let _ = win.set_focus();
     }
+}
+
+/// Show requests can arrive before the hidden startup webview is ready (for
+/// example from the tray or the single-instance callback). Queue those instead
+/// of flashing a partially rendered window.
+pub fn show_main_window(app: &AppHandle) {
+    let shared = app.state::<AppFlags>();
+    if !shared.frontend_ready.load(Ordering::Acquire) {
+        shared.show_requested.store(true, Ordering::Release);
+        return;
+    }
+    show_main_window_now(app);
+}
+
+/// Called once the main React view has loaded its persisted state. A normal
+/// launch is revealed exactly once here; startup-minimized launches remain in
+/// the tray unless the user explicitly requested the window while it loaded.
+#[tauri::command]
+pub fn frontend_ready(app: AppHandle) -> AppResult<()> {
+    let shared = app.state::<AppFlags>();
+    if shared.frontend_ready.swap(true, Ordering::AcqRel) {
+        return Ok(());
+    }
+    let show_was_requested = shared.show_requested.swap(false, Ordering::AcqRel);
+    let start_minimized = {
+        let store = app.state::<Mutex<Store>>();
+        let start_minimized = store.lock().unwrap().settings.start_minimized;
+        start_minimized
+    };
+
+    if show_was_requested || !start_minimized {
+        show_main_window_now(&app);
+    }
+    Ok(())
 }
 
 #[tauri::command]

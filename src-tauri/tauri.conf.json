@@ -24,7 +24,7 @@
         "shadow": false,
         "maximizable": false,
         "center": true,
-        "visible": true
+        "visible": false
       },
       {
         "label": "quick-capture",

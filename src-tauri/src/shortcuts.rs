@@ -9,6 +9,12 @@ use tauri::{AppHandle, Emitter, Manager};
 /// shared state is the gaming-mode suppression flag.
 pub struct AppFlags {
     pub gaming: AtomicBool,
+    /// The main webview has loaded its state and is safe to reveal without
+    /// showing an intermediate/blank frame.
+    pub frontend_ready: AtomicBool,
+    /// A tray click or second-instance launch happened while the frontend was
+    /// still loading. Fulfil it as soon as the webview reports ready.
+    pub show_requested: AtomicBool,
 }
 
 #[derive(Debug, Clone, Serialize)]
