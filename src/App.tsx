@@ -12,19 +12,14 @@ export default function App() {
     document.title = label === "quick-capture" ? "Pocket Capture" : "Pocket";
   }, [label]);
 
-  useEffect(() => {
-    // Make every non-interactive part of every Pocket window draggable,
-    // including content rendered through Radix portals. The vendored Tauri
-    // drag handler still excludes inputs, buttons and other controls so their
-    // normal click/type behavior is preserved.
-    document.body.setAttribute("data-tauri-drag-region", "deep");
-    return () => document.body.removeAttribute("data-tauri-drag-region");
-  }, []);
-
   return (
     <>
       {label === "quick-capture" ? <QuickCaptureWindow /> : <MainWindow />}
-      <Toaster position={label === "quick-capture" ? "bottom-center" : "bottom-right"} />
+      <Toaster
+        position={label === "quick-capture" ? "bottom-center" : "bottom-right"}
+        offset={label === "quick-capture" ? 12 : 24}
+        mobileOffset={label === "quick-capture" ? 12 : 24}
+      />
     </>
   );
 }

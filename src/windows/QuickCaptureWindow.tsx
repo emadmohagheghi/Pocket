@@ -148,6 +148,7 @@ export default function QuickCaptureWindow() {
   if (mode === "voice") {
     return (
       <div
+        data-tauri-drag-region="deep"
         className="flex h-screen flex-col justify-center gap-3 bg-background px-4 py-3"
         onKeyDown={(e) => {
           if (e.key === "Escape") {
@@ -210,7 +211,11 @@ export default function QuickCaptureWindow() {
   const looksLink = looksLikeUrl(content);
 
   return (
-    <div className="flex h-screen flex-col bg-background" onKeyDown={onKeyDown}>
+    <div
+      data-tauri-drag-region="deep"
+      className="flex h-screen flex-col bg-background"
+      onKeyDown={onKeyDown}
+    >
       <div className="flex items-center gap-1 border-b px-3 pt-2.5">
         <div
           className={cn(

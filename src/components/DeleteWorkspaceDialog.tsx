@@ -61,7 +61,7 @@ export function DeleteWorkspaceDialog({ workspaceId, onClose }: Props) {
 
   return (
     <AlertDialog open={workspaceId !== null} onOpenChange={(open) => !open && onClose()}>
-      <AlertDialogContent>
+      <AlertDialogContent data-tauri-drag-region="deep">
         <AlertDialogHeader>
           <AlertDialogTitle>Delete “{workspace?.name}”?</AlertDialogTitle>
           <AlertDialogDescription asChild>

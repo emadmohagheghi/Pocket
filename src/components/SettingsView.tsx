@@ -252,7 +252,10 @@ function Row({
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="inset-3 flex h-auto w-auto max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-3xl bg-background p-0 sm:max-w-none">
+      <DialogContent
+        data-tauri-drag-region="deep"
+        className="inset-3 flex h-auto w-auto max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-3xl bg-background p-0 sm:max-w-none"
+      >
         <div data-tauri-drag-region className="h-5 w-full shrink-0" aria-hidden />
         <DialogHeader className="shrink-0 border-b px-5 pb-4">
           <DialogTitle>Settings</DialogTitle>

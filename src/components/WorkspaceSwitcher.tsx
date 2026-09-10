@@ -60,7 +60,7 @@ export function WorkspacesDialog({ open, onClose }: { open: boolean; onClose: ()
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent data-tauri-drag-region="deep" className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>Workspaces</DialogTitle>
         </DialogHeader>

@@ -72,7 +72,10 @@ export default function MainWindow() {
 
   return (
     <div className="relative h-screen bg-transparent p-3">
-      <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-background">
+      <div
+        data-tauri-drag-region="deep"
+        className="flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-background"
+      >
         {/* Dedicated full-width drag strip: the search/menu row below is
             almost entirely interactive, so without this there would be no
             usable empty area to grab the frameless window by. */}
