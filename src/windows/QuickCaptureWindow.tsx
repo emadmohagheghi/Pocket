@@ -33,6 +33,9 @@ export default function QuickCaptureWindow() {
   const win = getCurrentWebviewWindow();
 
   const hideWindow = useCallback(async () => {
+    // Hiding a capture must always release the microphone and discard any
+    // unsaved audio, including a getUserMedia request still in flight.
+    recorder.cancel();
     // The bar can already be gone (user dismissed it mid-flash); hiding a
     // closed window must never surface as an error.
     try {
@@ -43,7 +46,7 @@ export default function QuickCaptureWindow() {
     setMode("text");
     setContent("");
     setSavedFlash(false);
-  }, [win]);
+  }, [win, recorder.cancel]);
 
   const flashThenHide = useCallback(() => {
     setSavedFlash(true);
@@ -148,7 +151,6 @@ export default function QuickCaptureWindow() {
         className="flex h-screen flex-col justify-center gap-3 bg-background px-4 py-3"
         onKeyDown={(e) => {
           if (e.key === "Escape") {
-            recorder.cancel();
             void hideWindow();
           }
         }}

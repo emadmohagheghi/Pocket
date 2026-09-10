@@ -24,6 +24,8 @@ export function useRecorder() {
   const timerRef = useRef<number | null>(null);
   /** True from start() until the mic is live — blur-hide waits for this. */
   const startingRef = useRef(false);
+  /** Invalidates a pending getUserMedia request when capture is cancelled. */
+  const startRequestRef = useRef(0);
   const stopResolverRef = useRef<((value: { blob: Blob; durationMs: number } | null) => void) | null>(null);
 
   const isBusy = useCallback(() => startingRef.current || recorderRef.current !== null, []);
@@ -39,10 +41,17 @@ export function useRecorder() {
     startingRef.current = false;
   }, []);
 
-  useEffect(() => cleanup, [cleanup]);
+  useEffect(
+    () => () => {
+      startRequestRef.current += 1;
+      cleanup();
+    },
+    [cleanup]
+  );
 
   const start = useCallback(async () => {
     if (recorderRef.current || startingRef.current) return;
+    const requestId = ++startRequestRef.current;
     startingRef.current = true;
     setState({ recording: false, elapsedMs: 0, error: null });
     let stream: MediaStream;
@@ -53,6 +62,8 @@ export function useRecorder() {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       void import("@/lib/api").then(({ api }) => api.log("getUserMedia: microphone acquired"));
     } catch (e) {
+      if (requestId !== startRequestRef.current) return;
+
       void import("@/lib/api").then(({ api }) => api.log(`getUserMedia FAILED: ${e}`));
       startingRef.current = false;
       const denied =
@@ -68,6 +79,10 @@ export function useRecorder() {
             ? "Microphone access was denied. Enable it in Windows privacy settings for this app."
             : "No microphone is available.",
       });
+      return;
+    }
+    if (requestId !== startRequestRef.current) {
+      stream.getTracks().forEach((track) => track.stop());
       return;
     }
     streamRef.current = stream;
@@ -106,6 +121,7 @@ export function useRecorder() {
 
   /** Stops and discards the recording. */
   const cancel = useCallback(() => {
+    startRequestRef.current += 1;
     const mr = recorderRef.current;
     stopResolverRef.current = null;
     if (mr && mr.state !== "inactive") {
