@@ -103,7 +103,7 @@ export function SettingsView() {
   if (!settings) return null;
 
   return (
-    <div className="w-full max-w-full min-w-0 space-y-6 px-1 pb-2">
+    <div className="flex w-full max-w-full min-w-0 flex-col gap-6 px-1 pb-2">
       <Section icon={<MonitorCog className="size-4" />} title="General">
         <Row label="Launch on startup">
           <Switch
@@ -248,15 +248,18 @@ function Row({
   );
 }
 
-/** Settings rendered as a popup dialog (opened from the "…" menu). */
+/** Settings fills the main Pocket surface without resizing the native window. */
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="top-auto bottom-[5rem] translate-y-0 max-h-[72vh] overflow-y-auto sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="inset-3 flex h-auto w-auto max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-3xl bg-background p-0 sm:max-w-none">
+        <div data-tauri-drag-region className="h-5 w-full shrink-0" aria-hidden />
+        <DialogHeader className="shrink-0 border-b px-5 pb-4">
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
-        <SettingsView />
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
+          <SettingsView />
+        </div>
       </DialogContent>
     </Dialog>
   );
