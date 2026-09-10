@@ -158,6 +158,11 @@ export function AddBar() {
       <label
         htmlFor={voiceActive ? undefined : inputId}
         className="flex items-center gap-2.5 rounded-full border border-border/60 bg-muted/50 px-3.5 py-2 transition-colors focus-within:border-border"
+        onClick={(event) => {
+          if (!recorder.recording) return;
+          const target = event.target as HTMLElement;
+          if (!target.closest("[data-recording-save]")) recorder.cancel();
+        }}
       >
         {voiceActive ? (
           <>
@@ -191,6 +196,7 @@ export function AddBar() {
             <Button
               type="button"
               size="sm"
+              data-recording-save
               className="h-7 shrink-0 gap-1.5 bg-red-500 px-2.5 text-xs text-white hover:bg-red-600"
               disabled={savingVoice}
               onClick={() => void stopAndSaveVoice()}

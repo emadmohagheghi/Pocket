@@ -108,6 +108,7 @@ export function VoiceRow({
       ref={rowRef}
       role="listitem"
       tabIndex={0}
+      data-tauri-drag-region="deep"
       className="group flex items-center gap-3 px-1 py-3 focus-visible:outline-2 focus-visible:outline-ring"
     >
       <Button
