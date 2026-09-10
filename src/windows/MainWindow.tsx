@@ -127,7 +127,7 @@ export default function MainWindow() {
         {gaming && (
           <div className="px-3 pt-2">
             <div className="rounded-xl bg-orange-500/10 px-3 py-2 text-[11px] leading-snug text-orange-600 dark:text-orange-400">
-              <span className="font-medium">Gaming mode active</span> — global shortcuts are
+              <span className="font-medium">Gaming mode active</span> — quick capture is
               disabled.
             </div>
           </div>

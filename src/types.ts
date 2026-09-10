@@ -40,8 +40,6 @@ export interface WorkspaceInfo {
 export interface Settings {
   launchOnStartup: boolean;
   startMinimized: boolean;
-  quickCaptureShortcut: string;
-  voiceShortcut: string | null;
   activeWorkspaceId: string;
   gamingDetectionEnabled: boolean;
   theme: "system" | "light" | "dark";

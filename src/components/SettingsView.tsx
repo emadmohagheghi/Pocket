@@ -1,24 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { open as openFile, save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import {
   Download,
   FolderOpen,
-  Keyboard,
   LoaderCircle,
   MonitorCog,
   ShieldCheck,
   Upload,
-  X,
 } from "lucide-react";
 
 import { usePocket } from "@/store";
 import { api } from "@/lib/api";
-import { acceleratorFromEvent, shortcutLabel } from "@/lib/shortcut";
-import { formatBytes, cn } from "@/lib/utils";
+import { formatBytes } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
@@ -135,84 +131,6 @@ export function SettingsView() {
             </SelectContent>
           </Select>
         </Row>
-      </Section>
-
-      <Section icon={<Keyboard className="size-4" />} title="Shortcuts">
-        <Row
-          label="Quick capture"
-        >
-          <div className="flex items-center gap-2">
-            <Select
-              value={settings.quickCaptureShortcut === "DoubleShift" ? "DoubleShift" : "custom"}
-              onValueChange={(v) => {
-                if (v === "DoubleShift") {
-                  void api
-                    .setShortcut("quickCapture", "DoubleShift")
-                    .then(() => { toast.success("Quick capture shortcut updated"); })
-                    .catch((e) => { toast.error(String(e)); });
-                }
-              }}
-            >
-              <SelectTrigger className="w-32" aria-label="Shortcut mode">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="DoubleShift">Double Shift</SelectItem>
-                <SelectItem value="custom">Custom…</SelectItem>
-              </SelectContent>
-            </Select>
-            {settings.quickCaptureShortcut !== "DoubleShift" && (
-              <ShortcutInput
-                value={settings.quickCaptureShortcut}
-                onSave={(accel) =>
-                  api
-                    .setShortcut("quickCapture", accel)
-                    .then(() => { toast.success("Quick capture shortcut updated"); })
-                    .catch((e) => { toast.error(String(e)); })
-                }
-              />
-            )}
-          </div>
-        </Row>
-        <Row label="Voice recording">
-          {settings.voiceShortcut ? (
-            <div className="flex items-center gap-2">
-              <ShortcutInput
-                value={settings.voiceShortcut}
-                onSave={(accel) =>
-                  api
-                    .setShortcut("voice", accel)
-                    .then(() => { toast.success("Voice shortcut updated"); })
-                    .catch((e) => { toast.error(String(e)); })
-                }
-              />
-              <Button
-                size="icon"
-                variant="ghost"
-                aria-label="Unassign voice shortcut"
-                onClick={() =>
-                  void api
-                    .setShortcut("voice", null)
-                    .then(() => { toast.success("Voice shortcut unassigned"); })
-                    .catch((e) => { toast.error(String(e)); })
-                }
-              >
-                <X className="size-4" />
-              </Button>
-            </div>
-          ) : (
-            <ShortcutInput
-              value={null}
-              placeholder="Unassigned — click to set"
-              onSave={(accel) =>
-                api
-                  .setShortcut("voice", accel)
-                  .then(() => { toast.success("Voice shortcut updated"); })
-                  .catch((e) => { toast.error(String(e)); })
-              }
-            />
-          )}
-        </Row>
         <Row
           label="Gaming mode"
         >
@@ -327,54 +245,6 @@ function Row({
       </div>
       <div className="shrink-0">{children}</div>
     </div>
-  );
-}
-
-function ShortcutInput({
-  value,
-  onSave,
-  placeholder,
-}: {
-  value: string | null;
-  onSave: (accel: string) => Promise<void>;
-  placeholder?: string;
-}) {
-  const [capturing, setCapturing] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const onKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.key === "Escape") {
-        setCapturing(false);
-        return;
-      }
-      if (e.key === "Enter") {
-        setCapturing(false);
-        return;
-      }
-      const accel = acceleratorFromEvent(e);
-      if (!accel) return;
-      setCapturing(false);
-      void onSave(accel).catch(() => {});
-    },
-    [onSave]
-  );
-
-  return (
-    <Input
-      ref={inputRef}
-      readOnly
-      value={capturing ? "Press keys…" : shortcutLabel(value)}
-      placeholder={placeholder}
-      aria-label="Shortcut"
-      className={cn("w-44 cursor-pointer text-center font-mono text-xs", capturing && "ring-2 ring-ring")}
-      onKeyDown={onKeyDown}
-      onFocus={() => setCapturing(true)}
-      onBlur={() => setCapturing(false)}
-      onClick={() => inputRef.current?.focus()}
-    />
   );
 }
 

@@ -70,8 +70,6 @@ export const api = {
 
   updateSettings: (patch: Partial<Settings>) =>
     invoke<Settings>("update_settings", { patch }),
-  setShortcut: (kind: "quickCapture" | "voice", value: string | null) =>
-    invoke<Settings>("set_shortcut", { kind, value }),
   getGamingState: () => invoke<boolean>("get_gaming_state"),
 
   getStorageInfo: () => invoke<StorageInfo>("get_storage_info"),
