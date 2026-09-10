@@ -5,6 +5,7 @@ import {
   Layers,
   MoreHorizontal,
   Settings as SettingsIcon,
+  X,
 } from "lucide-react";
 
 import { usePocket } from "@/store";
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -68,12 +70,7 @@ export default function MainWindow() {
 
   return (
     <div className="relative h-screen bg-transparent p-3">
-      {/* Transparent margin drag layer (behind the card): only the empty
-          margin around the card is draggable — the card is a sibling above
-          it, never inside the drag region, so all card contents stay fully
-          clickable. */}
-      <div data-tauri-drag-region className="absolute inset-0 z-0" aria-hidden />
-      <div className="relative z-10 flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-background">
+      <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-background">
         {/* Dedicated full-width drag strip: the search/menu row below is
             almost entirely interactive, so without this there would be no
             usable empty area to grab the frameless window by. */}
@@ -89,25 +86,39 @@ export default function MainWindow() {
                 className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
                 aria-label="More options"
               >
-                <MoreHorizontal className="size-4" />
+                <MoreHorizontal />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem onClick={() => setWorkspacesOpen(true)}>
-                <Layers className="size-4" /> Workspaces
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
-                <SettingsIcon className="size-4" /> Settings
-              </DropdownMenuItem>
+              <DropdownMenuGroup>
+                <DropdownMenuItem onClick={() => setWorkspacesOpen(true)}>
+                  <Layers /> Workspaces
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
+                  <SettingsIcon /> Settings
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="whitespace-nowrap"
-                onClick={() =>
-                  void api.openDataFolder().catch((err) => toast.error(String(err)))
-                }
-              >
-                <FolderOpen className="size-4" /> Open data folder
-              </DropdownMenuItem>
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  className="whitespace-nowrap"
+                  onClick={() =>
+                    void api.openDataFolder().catch((err) => toast.error(String(err)))
+                  }
+                >
+                  <FolderOpen /> Open data folder
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  onClick={() =>
+                    void api.closeWindow().catch((err) => toast.error(String(err)))
+                  }
+                >
+                  <X /> Close Window
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

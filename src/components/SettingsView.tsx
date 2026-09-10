@@ -123,13 +123,6 @@ export function SettingsView() {
             aria-label="Start minimized"
           />
         </Row>
-        <Row label="Close to system tray">
-          <Switch
-            checked={settings.closeToTray}
-            onCheckedChange={(v) => void setSettings({ closeToTray: v })}
-            aria-label="Close to system tray"
-          />
-        </Row>
         <Row label="Theme">
           <Select value={settings.theme} onValueChange={(v) => void setSettings({ theme: v as never })}>
             <SelectTrigger className="w-32" aria-label="Theme">

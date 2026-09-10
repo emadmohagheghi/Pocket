@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, State, Wry};
+use tauri::{AppHandle, Manager, State, Wry};
 
 use crate::commands::show_main_window;
 use crate::shortcuts::{show_voice_capture, toggle_quick_capture};
@@ -51,7 +51,6 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let show = MenuItem::with_id(app, "show", "Show Pocket", true, None::<&str>)?;
     let capture = MenuItem::with_id(app, "quick-capture", "Quick Capture", true, None::<&str>)?;
     let voice = MenuItem::with_id(app, "voice", "Start Voice Recording", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let store: State<Mutex<Store>> = app.state();
@@ -94,8 +93,6 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &PredefinedMenuItem::separator(app)?,
             &workspace_submenu,
             &PredefinedMenuItem::separator(app)?,
-            &settings,
-            &PredefinedMenuItem::separator(app)?,
             &quit,
         ],
     )
@@ -106,10 +103,6 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
         "show" => show_main_window(app),
         "quick-capture" => toggle_quick_capture(app),
         "voice" => show_voice_capture(app),
-        "settings" => {
-            show_main_window(app);
-            let _ = app.emit_to("main", "open-settings", ());
-        }
         "quit" => app.exit(0),
         other => {
             if let Some(ws_id) = other.strip_prefix("ws:") {

@@ -76,6 +76,7 @@ export const api = {
 
   getStorageInfo: () => invoke<StorageInfo>("get_storage_info"),
   openDataFolder: () => invoke<void>("open_data_folder"),
+  closeWindow: () => invoke<void>("close_main_window"),
   exportBackup: (path: string) => invoke<ExportSummary>("export_backup", { path }),
   importBackup: (path: string) => invoke<ImportSummary>("import_backup", { path }),
 

@@ -100,6 +100,17 @@ pub fn open_data_folder(app: AppHandle) -> AppResult<()> {
 }
 
 #[tauri::command]
+pub fn close_main_window(app: AppHandle) -> AppResult<()> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| AppError::Invalid("main window is not available".into()))?;
+    window
+        .hide()
+        .map_err(|e| AppError::Storage(format!("could not hide main window: {e}")))?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn export_backup(app: AppHandle, path: String) -> AppResult<ExportSummary> {
     if path.trim().is_empty() {
         return Err(AppError::Invalid("export path cannot be empty".into()));
@@ -466,9 +477,6 @@ pub fn update_settings(app: AppHandle, patch: SettingsPatch) -> AppResult<Settin
         }
         if let Some(v) = patch.start_minimized {
             s.start_minimized = v;
-        }
-        if let Some(v) = patch.close_to_tray {
-            s.close_to_tray = v;
         }
         if let Some(v) = patch.gaming_detection_enabled {
             s.gaming_detection_enabled = v;

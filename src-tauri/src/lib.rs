@@ -90,15 +90,10 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
-                    let close_to_tray = window
-                        .app_handle()
-                        .try_state::<Mutex<Store>>()
-                        .map(|s| s.lock().unwrap().settings.close_to_tray)
-                        .unwrap_or(true);
-                    if close_to_tray {
-                        api.prevent_close();
-                        let _ = window.hide();
-                    }
+                    // Closing the main window always keeps Pocket running in
+                    // the tray. Explicit Quit actions terminate the app.
+                    api.prevent_close();
+                    let _ = window.hide();
                 } else if window.label() == "quick-capture" {
                     // The capture window always hides instead of quitting.
                     api.prevent_close();
@@ -111,6 +106,7 @@ pub fn run() {
             commands::get_items,
             commands::get_storage_info,
             commands::open_data_folder,
+            commands::close_main_window,
             commands::export_backup,
             commands::import_backup,
             commands::create_workspace,

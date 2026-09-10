@@ -40,7 +40,6 @@ export interface WorkspaceInfo {
 export interface Settings {
   launchOnStartup: boolean;
   startMinimized: boolean;
-  closeToTray: boolean;
   quickCaptureShortcut: string;
   voiceShortcut: string | null;
   activeWorkspaceId: string;
