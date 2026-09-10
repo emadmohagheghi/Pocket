@@ -37,7 +37,7 @@
         "decorations": false,
         "resizable": false,
         "center": true,
-        "transparent": false,
+        "transparent": true,
         "shadow": false
       }
     ],

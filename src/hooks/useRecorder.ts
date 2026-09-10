@@ -28,6 +28,15 @@ export function useRecorder() {
   const startRequestRef = useRef(0);
   const stopResolverRef = useRef<((value: { blob: Blob; durationMs: number } | null) => void) | null>(null);
 
+  // Live input level (0..1, smoothed), read per-frame by consumers like the
+  // recorder orb; kept in a ref so the meter never re-renders the window.
+  const levelRef = useRef(0);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const meterRafRef = useRef(0);
+  const meterDataRef = useRef<Float32Array | null>(null);
+
   const isBusy = useCallback(() => startingRef.current || recorderRef.current !== null, []);
 
   const cleanup = useCallback(() => {
@@ -35,6 +44,13 @@ export function useRecorder() {
       window.clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    cancelAnimationFrame(meterRafRef.current);
+    sourceNodeRef.current?.disconnect();
+    sourceNodeRef.current = null;
+    analyserRef.current = null;
+    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+    levelRef.current = 0;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     recorderRef.current = null;
@@ -87,6 +103,47 @@ export function useRecorder() {
     }
     streamRef.current = stream;
     chunksRef.current = [];
+
+    // Meter chain: analyser only (never to destination — no monitoring echo).
+    try {
+      const ctx = new AudioContext();
+      void ctx.resume().catch(() => {});
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      audioCtxRef.current = ctx;
+      sourceNodeRef.current = source;
+      analyserRef.current = analyser;
+      const data = new Float32Array(analyser.fftSize);
+      meterDataRef.current = data;
+      // Two-stage envelope: a fast peak follower, then a mid-speed ease that
+      // keeps speech spikes from twitching the orb without hiding the swell.
+      // Both stages are exponential (frame-rate independent) and the output
+      // curve is ease-out quad — responsive right at onset, gentle at the top.
+      let fast = 0;
+      let slow = 0;
+      let lastNow = 0;
+      const follow = (from: number, to: number, perSecond: number, dt: number) =>
+        from + (to - from) * (1 - Math.exp(-perSecond * dt));
+      const frame = (now: number): void => {
+        meterRafRef.current = requestAnimationFrame(frame);
+        const dt = lastNow ? Math.min((now - lastNow) / 1000, 0.1) : 1 / 60;
+        lastNow = now;
+        analyser.getFloatTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+        const rms = Math.sqrt(sum / data.length);
+        const instant = Math.min(1, Math.max(0, rms - 0.01) * 8.5);
+        fast = follow(fast, instant, instant > fast ? 18 : 4, dt);
+        slow = follow(slow, fast, 6, dt);
+        levelRef.current = slow * (2 - slow);
+      };
+      meterRafRef.current = requestAnimationFrame(frame);
+    } catch {
+      // Metering is decorative; recording must survive an AudioContext failure.
+    }
+
     const mime = recordingExtension();
     const mr = new MediaRecorder(stream, { mimeType: mime });
     mr.ondataavailable = (e) => {
@@ -136,5 +193,5 @@ export function useRecorder() {
     }
   }, [cleanup]);
 
-  return { ...state, start, stop, cancel, isBusy };
+  return { ...state, start, stop, cancel, isBusy, levelRef };
 }

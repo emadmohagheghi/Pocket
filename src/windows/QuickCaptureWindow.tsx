@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import { applyTheme } from "@/lib/theme";
 import { useQc, useQcEvents } from "@/qcStore";
 import { useRecorder } from "@/hooks/useRecorder";
+import { NebulaOrb } from "@/components/NebulaOrb";
 import { cn, formatDuration, looksLikeUrl } from "@/lib/utils";
 
 export default function QuickCaptureWindow() {
@@ -149,61 +150,74 @@ export default function QuickCaptureWindow() {
     return (
       <div
         data-tauri-drag-region="deep"
-        className="flex h-screen flex-col justify-center gap-3 bg-background px-4 py-3"
+        className="flex h-screen items-center gap-4 overflow-hidden rounded-3xl border border-border/60 bg-background py-3 pl-4 pr-5"
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             void hideWindow();
           }
         }}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[13px] font-medium">
-            <span className={cn("size-2 rounded-full", recorder.recording ? "animate-pulse bg-red-500" : "bg-muted-foreground/40")} />
-            {recorder.recording ? "Recording…" : "Voice note"}
-            <span className="text-muted-foreground">→ {activeWs?.name ?? "…"}</span>
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-[13px] font-medium">
+              <span className={cn("size-2 rounded-full", recorder.recording ? "animate-pulse bg-red-500" : "bg-muted-foreground/40")} />
+              {recorder.recording ? "Recording…" : "Voice note"}
+              <span className="text-muted-foreground">→ {activeWs?.name ?? "…"}</span>
+            </div>
+            <span className="font-mono text-sm tabular-nums text-muted-foreground">
+              {formatDuration(recorder.elapsedMs)}
+            </span>
           </div>
-          <span className="font-mono text-sm tabular-nums text-muted-foreground">
-            {formatDuration(recorder.elapsedMs)}
-          </span>
-        </div>
 
-        {recorder.error && (
-          <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{recorder.error}</p>
-        )}
-
-        <div className="flex items-center gap-2">
-          {recorder.recording ? (
-            <>
-              <button
-                onClick={() => void stopAndSave()}
-                className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-red-500 text-[13px] font-medium text-white transition-colors hover:bg-red-600 focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                <Square className="size-3.5 fill-current" /> Stop & save
-              </button>
-              <button
-                onClick={() => void hideWindow()}
-                className="h-9 rounded-lg border px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => void recorder.start()}
-                className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-primary text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                <AudioLines className="size-4" /> Start recording
-              </button>
-              <button
-                onClick={() => setMode("text")}
-                className="h-9 rounded-lg border px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                Text mode
-              </button>
-            </>
+          {recorder.error && (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{recorder.error}</p>
           )}
+
+          <div className="flex items-center gap-2">
+            {recorder.recording ? (
+              <>
+                <button
+                  onClick={() => void stopAndSave()}
+                  className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-red-500 text-[13px] font-medium text-white transition-colors hover:bg-red-600 focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  <Square className="size-3.5 fill-current" /> Stop &amp; save
+                </button>
+                <button
+                  onClick={() => void hideWindow()}
+                  className="h-9 rounded-lg border px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => void recorder.start()}
+                  className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-primary text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  <AudioLines className="size-4" /> Start recording
+                </button>
+                <button
+                  onClick={() => setMode("text")}
+                  className="h-9 rounded-lg border px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  Text mode
+                </button>
+              </>
+            )}
+          </div>
         </div>
+
+        <NebulaOrb
+          size={132}
+          color="#ef4444"
+          highlightColor="#fff5f5"
+          speed={1.5}
+          levelRef={recorder.levelRef}
+          paused={!recorder.recording}
+          aria-hidden
+          className={cn("shrink-0 transition-opacity", !recorder.recording && "opacity-60")}
+        />
       </div>
     );
   }
@@ -213,7 +227,7 @@ export default function QuickCaptureWindow() {
   return (
     <div
       data-tauri-drag-region="deep"
-      className="flex h-screen flex-col bg-background"
+      className="flex h-screen flex-col overflow-hidden rounded-3xl border border-border/60 bg-background"
       onKeyDown={onKeyDown}
     >
       <div className="flex items-center gap-1 border-b px-3 pt-2.5">
