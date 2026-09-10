@@ -17,7 +17,7 @@ use tauri::http::header::{
 use tauri::{AppHandle, Manager, Runtime, UriSchemeContext};
 use tauri_plugin_autostart::MacosLauncher;
 
-use shortcuts::{ShortcutConfig, ShortcutShared};
+use shortcuts::AppFlags;
 use storage::Store;
 
 pub fn run() {
@@ -33,13 +33,8 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             None,
         ))
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .register_uri_scheme_protocol("voice", voice_protocol)
-        .manage(ShortcutShared {
-            config: Mutex::new(ShortcutConfig {
-                quick_capture: "DoubleShift".into(),
-                voice: None,
-            }),
+        .manage(AppFlags {
             gaming: std::sync::atomic::AtomicBool::new(false),
         })
         .setup(|app| {
@@ -57,13 +52,7 @@ pub fn run() {
             // Tray.
             tray::build_tray(&handle)?;
 
-            // Shortcuts: accelerators + double-shift hook.
-            {
-                let shared = handle.state::<ShortcutShared>();
-                let mut cfg = shared.config.lock().unwrap_or_else(|e| e.into_inner());
-                *cfg = ShortcutConfig::from_settings(&settings);
-            }
-            shortcuts::apply_registrations(&handle);
+            // Fixed gestures: double-shift hook (text on tap, voice on hold).
             shortcuts::double_shift::spawn(handle.clone());
             gaming::spawn(handle.clone());
 
@@ -123,7 +112,6 @@ pub fn run() {
             commands::delete_recording,
             commands::copy_to_clipboard,
             commands::update_settings,
-            commands::set_shortcut,
             commands::get_gaming_state,
             commands::open_capture,
             commands::open_url,

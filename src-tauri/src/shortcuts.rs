@@ -1,38 +1,15 @@
-use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
-use crate::error::{AppError, AppResult};
-
-/// Shortcut configuration shared between the registration engine and the
-/// double-shift keyboard hook.
-pub struct ShortcutShared {
-    pub config: Mutex<ShortcutConfig>,
+/// Flags shared with the double-shift keyboard hook. Capture gestures are
+/// fixed (double-shift for text, double-shift-hold for voice), so the only
+/// shared state is the gaming-mode suppression flag.
+pub struct AppFlags {
     pub gaming: AtomicBool,
 }
-
-#[derive(Debug, Clone)]
-pub struct ShortcutConfig {
-    /// "DoubleShift" or an accelerator string.
-    pub quick_capture: String,
-    pub voice: Option<String>,
-}
-
-impl ShortcutConfig {
-    pub fn from_settings(settings: &crate::models::Settings) -> Self {
-        ShortcutConfig {
-            quick_capture: settings.quick_capture_shortcut.clone(),
-            voice: settings.voice_shortcut.clone(),
-        }
-    }
-}
-
-pub const DOUBLE_SHIFT: &str = "DoubleShift";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -347,81 +324,6 @@ pub fn debug_log(message: &str) {
     }
 }
 
-/// True when the given string is a valid accelerator for the global shortcut
-/// plugin (or the special "DoubleShift" value).
-pub fn validate_shortcut_string(value: &str) -> AppResult<()> {
-    if value == DOUBLE_SHIFT {
-        return Ok(());
-    }
-    Shortcut::from_str(value)
-        .map(|_| ())
-        .map_err(|e| AppError::Invalid(format!("invalid shortcut '{value}': {e}")))
-}
-
-/// (Re)register all accelerator-based global shortcuts. Called at startup,
-/// after settings changes and on gaming-mode transitions. DoubleShift is not
-/// registered here — it runs on the low-level keyboard hook which checks the
-/// gaming flag itself.
-pub fn apply_registrations(app: &AppHandle) {
-    let shared = app.state::<ShortcutShared>();
-    let gaming = shared.gaming.load(Ordering::Relaxed);
-    let config = shared
-        .config
-        .lock()
-        .map(|c| c.clone())
-        .unwrap_or(ShortcutConfig { quick_capture: DOUBLE_SHIFT.into(), voice: None });
-
-    debug_log(&format!(
-        "apply_registrations: gaming={gaming} quick='{}' voice={:?}",
-        config.quick_capture, config.voice
-    ));
-
-    let gs = app.global_shortcut();
-    // Always start from a clean slate — avoids stale/duplicate registrations.
-    let _ = gs.unregister_all();
-    if gaming {
-        // While gaming, no accelerator is registered at all. The double-shift
-        // hook consults the gaming flag and refuses to trigger.
-        return;
-    }
-
-    if config.quick_capture != DOUBLE_SHIFT {
-        match register_accelerator(app, &config.quick_capture, "text".to_string()) {
-            Ok(()) => debug_log(&format!("registered accelerator '{}'", config.quick_capture)),
-            Err(e) => eprintln!(
-                "[pocket] failed to register quick-capture shortcut '{}': {e}",
-                config.quick_capture
-            ),
-        }
-    }
-    if let Some(voice) = &config.voice {
-        match register_accelerator(app, voice, "voice".to_string()) {
-            Ok(()) => debug_log(&format!("registered accelerator '{voice}'")),
-            Err(e) => eprintln!("[pocket] failed to register voice shortcut '{voice}': {e}"),
-        }
-    }
-}
-
-fn register_accelerator(app: &AppHandle, accel: &str, mode: String) -> AppResult<()> {
-    let shortcut = Shortcut::from_str(accel)
-        .map_err(|e| AppError::Invalid(format!("invalid shortcut '{accel}': {e}")))?;
-    app.global_shortcut()
-        .on_shortcut(shortcut, move |app, _shortcut, event| {
-            if event.state() == ShortcutState::Pressed {
-                let shared = app.state::<ShortcutShared>();
-                if shared.gaming.load(Ordering::Relaxed) {
-                    return; // refuse to react while gaming
-                }
-                match mode.as_str() {
-                    "voice" => show_voice_capture(app),
-                    _ => toggle_quick_capture(app),
-                }
-            }
-        })
-        .map_err(|e| AppError::ShortcutUnavailable(e.to_string()))?;
-    Ok(())
-}
-
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -450,6 +352,12 @@ pub mod double_shift {
     const LLKHF_INJECTED: KBDLLHOOKSTRUCT_FLAGS = KBDLLHOOKSTRUCT_FLAGS(0x10);
     const DOUBLE_SHIFT_WINDOW_MS: u64 = 450;
     const REPEAT_GUARD_MS: u64 = 60;
+    /// Second Shift press held this long opens voice mode instead of text.
+    /// The watcher polls the physical key state, so a quick tap-tap-release
+    /// still resolves to text as soon as the release is seen (no added
+    /// latency), while a tap-hold resolves to voice after this threshold.
+    const HOLD_FOR_VOICE_MS: u64 = 400;
+    const HOLD_POLL_MS: u64 = 15;
 
     /// Windows silently drops low-level hooks whose callback misses the
     /// system timeout (e.g. while the process is saturated during startup).
@@ -689,34 +597,82 @@ pub mod double_shift {
         state.released_since_down = false;
     }
 
+    /// True while either physical Shift key is held down. Polled from the
+    /// hold-watcher thread (never from inside the hook callback).
+    fn is_shift_physically_down() -> bool {
+        unsafe {
+            use windows::Win32::UI::Input::KeyboardAndMouse::{
+                GetAsyncKeyState, VK_LSHIFT, VK_RSHIFT,
+            };
+            let l = GetAsyncKeyState(VK_LSHIFT.0 as i32) as u16;
+            let r = GetAsyncKeyState(VK_RSHIFT.0 as i32) as u16;
+            (l & 0x8000) != 0 || (r & 0x8000) != 0
+        }
+    }
+
+    /// Pure hold decision, unit-tested below. `released_early` means the
+    /// second press was released before the hold threshold elapsed.
+    fn hold_decision(released_early: bool) -> &'static str {
+        if released_early { "text" } else { "voice" }
+    }
+
     fn try_trigger(app: &AppHandle) {
-        let shared = app.state::<ShortcutShared>();
+        let shared = app.state::<super::AppFlags>();
         if shared.gaming.load(Ordering::Relaxed) {
             debug_log("double-shift suppressed (gaming mode)");
             return;
         }
-        let wants_double_shift = shared
-            .config
-            .lock()
-            .map(|c| c.quick_capture == DOUBLE_SHIFT)
-            .unwrap_or(false);
-        if !wants_double_shift {
-            debug_log("double-shift ignored (shortcut reassigned)");
-            return;
-        }
-        debug_log("DOUBLE SHIFT detected -> toggling quick capture");
-        // Never touch window APIs from inside the hook callback: dispatch the
-        // window work to the main thread so the callback returns instantly
-        // (a slow callback gets the hook removed by the system).
+        debug_log("DOUBLE SHIFT detected -> watching for hold (voice) vs tap (text)");
+        // Never touch window APIs from inside the hook callback: the hold
+        // watcher runs on its own thread and dispatches the window work to
+        // the main thread, so the callback returns instantly (a slow
+        // callback gets the hook removed by the system).
         let app_handle = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            super::show_text_capture_from_hotkey(&app_handle);
-        });
+        std::thread::Builder::new()
+            .name("double-shift-hold-watch".into())
+            .spawn(move || {
+                // Wait for either an early release (tap -> text mode) or the
+                // hold threshold elapsing with Shift still down (hold ->
+                // voice mode). Polling keeps tap-tap snappy: text opens as
+                // soon as the release is seen instead of after a fixed delay.
+                let mut elapsed_ms: u64 = 0;
+                let mut released_early = false;
+                while elapsed_ms < HOLD_FOR_VOICE_MS {
+                    if !is_shift_physically_down() {
+                        released_early = true;
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(HOLD_POLL_MS));
+                    elapsed_ms += HOLD_POLL_MS;
+                }
+                let mode = hold_decision(released_early);
+                // E2E-injected keys have no physical state, so they always
+                // look "released": they correctly resolve to text mode.
+                debug_log(&format!(
+                    "double-shift hold watch: released_early={released_early} elapsed={elapsed_ms}ms -> {mode} mode"
+                ));
+                let for_main = app_handle.clone();
+                let _ = app_handle.run_on_main_thread(move || {
+                    // Re-check the gaming flag: it may have flipped during
+                    // the short hold window.
+                    let shared = for_main.state::<super::AppFlags>();
+                    if shared.gaming.load(Ordering::Relaxed) {
+                        debug_log("double-shift hold result suppressed (gaming mode)");
+                        return;
+                    }
+                    if mode == "voice" {
+                        super::show_voice_capture(&for_main);
+                    } else {
+                        super::show_text_capture_from_hotkey(&for_main);
+                    }
+                });
+            })
+            .ok();
     }
 
     #[cfg(test)]
     mod hook_tests {
-        use super::{is_double_press, DOUBLE_SHIFT_WINDOW_MS, REPEAT_GUARD_MS};
+        use super::{hold_decision, is_double_press, DOUBLE_SHIFT_WINDOW_MS, REPEAT_GUARD_MS};
 
         #[test]
         fn two_quick_distinct_presses_trigger() {
@@ -745,6 +701,14 @@ pub mod double_shift {
         #[test]
         fn intervening_key_cancels_the_pair() {
             assert!(!is_double_press(1000, 1150, true, true));
+        }
+
+        #[test]
+        fn hold_resolves_to_voice_and_tap_to_text() {
+            // Second press released before the threshold -> text mode.
+            assert_eq!(hold_decision(true), "text");
+            // Still held when the threshold elapses -> voice mode.
+            assert_eq!(hold_decision(false), "voice");
         }
     }
 }

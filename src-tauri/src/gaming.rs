@@ -2,17 +2,16 @@
 //!
 //! Polls the foreground window a few times per second and decides whether the
 //! user is likely in a fullscreen or borderless-fullscreen game. When the
-//! state flips, the shared gaming flag is updated and the shortcut engine
-//! registers / unregisters all global accelerators accordingly. The
-//! double-shift keyboard hook consults the same flag, so while this reports
-//! "gaming" no global shortcut can fire.
+//! state flips, the shared gaming flag is updated. The double-shift keyboard
+//! hook consults the same flag, so while this reports "gaming" no capture
+//! gesture can fire.
 
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::shortcuts::{apply_registrations, ShortcutShared};
+use crate::shortcuts::AppFlags;
 
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,14 +40,13 @@ fn tick(app: &AppHandle) {
 
     let active = enabled && detect();
 
-    let shared = app.state::<ShortcutShared>();
+    let shared = app.state::<AppFlags>();
     let prev = shared.gaming.load(Ordering::Relaxed);
     if prev == active {
         return;
     }
     shared.gaming.store(active, Ordering::Relaxed);
     let _ = app.emit("gaming-mode-changed", GamingState { gaming: active });
-    apply_registrations(app);
     if active {
         // Never leave the capture window floating over a game.
         if let Some(win) = app.get_webview_window("quick-capture") {

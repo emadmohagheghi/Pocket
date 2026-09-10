@@ -3,7 +3,6 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use std::path::PathBuf;
-use std::str::FromStr;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
@@ -11,9 +10,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::error::{AppError, AppResult};
 use crate::fsutil;
 use crate::models::*;
-use crate::shortcuts::{
-    apply_registrations, validate_shortcut_string, ShortcutConfig, ShortcutShared,
-};
+use crate::shortcuts::AppFlags;
 use crate::storage::Store;
 
 /// Snapshot emitted to the frontend whenever settings change.
@@ -524,67 +521,8 @@ pub fn apply_autostart(app: &AppHandle) {
 }
 
 #[tauri::command]
-pub fn set_shortcut(app: AppHandle, kind: String, value: Option<String>) -> AppResult<Settings> {
-    let value = match kind.as_str() {
-        "quickCapture" => Some(value.unwrap_or_else(|| "DoubleShift".into())),
-        "voice" => value,
-        _ => {
-            return Err(AppError::Invalid(
-                "shortcut kind must be quickCapture or voice".into(),
-            ))
-        }
-    };
-
-    if let Some(v) = &value {
-        validate_shortcut_string(v)?;
-    }
-
-    // Dry-run: try to register the new accelerator before committing anything,
-    // so a conflict with another application leaves settings untouched.
-    if let Some(v) = &value {
-        if v != "DoubleShift" {
-            test_register(app.clone(), v)?;
-        }
-    }
-
-    let settings = {
-        let store = app.state::<Mutex<Store>>();
-        let mut store = store.lock().unwrap();
-        match kind.as_str() {
-            "quickCapture" => {
-                store.settings.quick_capture_shortcut =
-                    value.clone().unwrap_or_else(|| "DoubleShift".into())
-            }
-            "voice" => store.settings.voice_shortcut = value,
-            _ => unreachable!(),
-        }
-        store.persist_settings();
-        store.settings.clone()
-    };
-    {
-        let shared = app.state::<ShortcutShared>();
-        let mut cfg = shared.config.lock().unwrap_or_else(|e| e.into_inner());
-        *cfg = ShortcutConfig::from_settings(&settings);
-    }
-    apply_registrations(&app);
-    state_changed(&app);
-    Ok(settings)
-}
-
-fn test_register(app: AppHandle, accel: &str) -> AppResult<()> {
-    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
-    let shortcut = Shortcut::from_str(accel)
-        .map_err(|e| AppError::Invalid(format!("invalid shortcut: {e}")))?;
-    let gs = app.global_shortcut();
-    gs.register(shortcut)
-        .map_err(|e| AppError::ShortcutUnavailable(e.to_string()))?;
-    let _ = gs.unregister(shortcut);
-    Ok(())
-}
-
-#[tauri::command]
 pub fn get_gaming_state(app: AppHandle) -> AppResult<bool> {
-    let shared = app.state::<ShortcutShared>();
+    let shared = app.state::<AppFlags>();
     Ok(shared.gaming.load(Ordering::Relaxed))
 }
 

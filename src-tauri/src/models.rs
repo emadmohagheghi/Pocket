@@ -69,10 +69,6 @@ pub struct Counts {
 pub struct Settings {
     pub launch_on_startup: bool,
     pub start_minimized: bool,
-    /// "DoubleShift" or an accelerator string like "Ctrl+Shift+Space".
-    pub quick_capture_shortcut: String,
-    /// Accelerator string, or None when unassigned.
-    pub voice_shortcut: Option<String>,
     pub active_workspace_id: String,
     pub gaming_detection_enabled: bool,
     pub theme: String,
@@ -83,8 +79,6 @@ impl Default for Settings {
         Settings {
             launch_on_startup: false,
             start_minimized: false,
-            quick_capture_shortcut: "DoubleShift".into(),
-            voice_shortcut: None,
             active_workspace_id: String::new(),
             gaming_detection_enabled: true,
             theme: "system".into(),

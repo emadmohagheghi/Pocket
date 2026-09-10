@@ -16,11 +16,6 @@ pub enum AppError {
     Invalid(String),
     #[error("Storage is unavailable: {0}")]
     Storage(String),
-    #[error("Shortcut could not be registered — it may be owned by another application: {0}")]
-    ShortcutUnavailable(String),
-    #[error("Shortcut error: {0}")]
-    #[allow(dead_code)]
-    Shortcut(String),
     #[error("Recording error: {0}")]
     Recording(String),
 }
