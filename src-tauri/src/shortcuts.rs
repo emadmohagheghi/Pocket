@@ -225,12 +225,9 @@ fn grab_selected_text() -> Option<String> {
     let after = read_clipboard_text();
     match after {
         Some(t) if !t.trim().is_empty() => {
-            let preview: String = t.chars().take(80).collect();
-            let preview = preview.replace(['\r', '\n'], " ");
-            grab_log(&format!(
-                "grab: clipboard FRESH len={} preview='{preview}' -> pre-filling",
-                t.len()
-            ));
+            // Never write captured user content to diagnostic logs. The length
+            // is sufficient to confirm that the selection flow worked.
+            grab_log(&format!("grab: clipboard FRESH len={} -> saving", t.len()));
             Some(t)
         }
         _ => {
