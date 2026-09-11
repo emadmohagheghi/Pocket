@@ -5,7 +5,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, State, Wry};
 
 use crate::commands::show_main_window;
-use crate::shortcuts::{show_voice_capture, toggle_quick_capture};
+use crate::shortcuts::show_voice_capture;
 use crate::storage::Store;
 
 pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
@@ -49,7 +49,6 @@ pub fn refresh_tray(app: &AppHandle) {
 
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let show = MenuItem::with_id(app, "show", "Show Pocket", true, None::<&str>)?;
-    let capture = MenuItem::with_id(app, "quick-capture", "Quick Capture", true, None::<&str>)?;
     let voice = MenuItem::with_id(app, "voice", "Start Voice Recording", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
@@ -88,7 +87,6 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         app,
         &[
             &show,
-            &capture,
             &voice,
             &PredefinedMenuItem::separator(app)?,
             &workspace_submenu,
@@ -101,7 +99,6 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 fn handle_menu_event(app: &AppHandle, id: &str) {
     match id {
         "show" => show_main_window(app),
-        "quick-capture" => toggle_quick_capture(app),
         "voice" => show_voice_capture(app),
         "quit" => app.exit(0),
         other => {

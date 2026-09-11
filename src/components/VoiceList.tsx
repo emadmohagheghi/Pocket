@@ -21,7 +21,7 @@ export function VoiceList() {
         <SectionLabel>Voice</SectionLabel>
         <p className="px-1 text-[15px] font-semibold text-foreground">No voice notes yet</p>
         <p className="mt-1 max-w-md px-1 text-[13px] leading-relaxed text-muted-foreground">
-          Start a recording from Quick Capture (double Shift → mic icon, or the tray menu).
+          Start a recording with the microphone button or from the tray menu.
           Recordings never leave this machine.
         </p>
         <div className="px-1 pt-3">
@@ -31,7 +31,7 @@ export function VoiceList() {
             className="h-7 gap-1.5 text-xs"
             onClick={() =>
               api
-                .openCapture("voice")
+                .openVoiceCapture()
                 .catch((e) => toast.error(String(e)))
             }
           >

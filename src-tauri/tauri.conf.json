@@ -30,7 +30,7 @@
         "label": "quick-capture",
         "title": "Pocket Capture",
         "width": 620,
-        "height": 148,
+        "height": 190,
         "visible": false,
         "skipTaskbar": true,
         "alwaysOnTop": true,

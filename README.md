@@ -45,12 +45,9 @@ See the full [Privacy Policy](PRIVACY.md) and [Security Policy](SECURITY.md).
 | Capture selected text | Double press Left Shift |
 | Open voice capture | Double press Left Shift and hold the second press |
 | Push-to-record voice | Double press Right Shift, hold, then release to save |
-| Open quick capture from the main window | `Ctrl+N` |
 | Focus search | `Ctrl+K` |
-| Save quick capture | `Enter` |
-| Add a newline in quick capture | `Shift+Enter` |
-| Switch quick capture to text / voice | `Alt+1` / `Alt+2` |
-| Close quick capture | `Esc` |
+| Save text from the main add bar | `Enter` |
+| Cancel the voice-capture panel | `Esc` |
 | Copy / edit / pin a focused item | `C` / `E` / `P` |
 | Delete a focused item | `Delete` or `Backspace` |
 

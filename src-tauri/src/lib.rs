@@ -114,7 +114,7 @@ pub fn run() {
             commands::copy_to_clipboard,
             commands::update_settings,
             commands::get_gaming_state,
-            commands::open_capture,
+            commands::open_voice_capture,
             commands::open_url,
             commands::frontend_log,
         ])
@@ -184,16 +184,20 @@ fn install_panic_logger() {
     }));
 }
 
-/// Disables WebView2's browser accelerator keys (Ctrl+N "new window",
-/// Ctrl+F, Ctrl+P, …) so in-app shortcuts like Ctrl+N / Ctrl+K reach the
-/// page instead of being swallowed by the embedded browser layer.
+/// Disables WebView2's browser accelerator keys (Ctrl+N, Ctrl+F, Ctrl+P, …)
+/// so in-app shortcuts like Ctrl+K reach the page instead of being swallowed
+/// by the embedded browser layer.
 #[cfg(windows)]
 fn disable_browser_accelerators(window: &tauri::WebviewWindow) {
     use webview2_com::Microsoft::Web::WebView2::Win32::*;
     let _ = window.with_webview(move |webview| {
         let controller = webview.controller();
-        let Ok(core) = (unsafe { controller.CoreWebView2() }) else { return };
-        let Ok(settings) = (unsafe { core.Settings() }) else { return };
+        let Ok(core) = (unsafe { controller.CoreWebView2() }) else {
+            return;
+        };
+        let Ok(settings) = (unsafe { core.Settings() }) else {
+            return;
+        };
         let Ok(settings3) = windows::core::Interface::cast::<ICoreWebView2Settings3>(&settings)
         else {
             eprintln!("[pocket] ICoreWebView2Settings3 unavailable; accelerators untouched");
@@ -217,8 +221,12 @@ fn disable_browser_autofill(window: &tauri::WebviewWindow) {
     use webview2_com::Microsoft::Web::WebView2::Win32::*;
     let _ = window.with_webview(move |webview| {
         let controller = webview.controller();
-        let Ok(core) = (unsafe { controller.CoreWebView2() }) else { return };
-        let Ok(settings) = (unsafe { core.Settings() }) else { return };
+        let Ok(core) = (unsafe { controller.CoreWebView2() }) else {
+            return;
+        };
+        let Ok(settings) = (unsafe { core.Settings() }) else {
+            return;
+        };
         let Ok(settings9) = windows::core::Interface::cast::<ICoreWebView2Settings9>(&settings)
         else {
             eprintln!("[pocket] ICoreWebView2Settings9 unavailable; autofill untouched");

@@ -59,11 +59,7 @@ export default function MainWindow() {
       const target = e.target as HTMLElement;
       const typing =
         target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
-      if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === "n" || e.key === "N")) {
-        // Ctrl+N — open the quick-capture bar (global shortcut while focused here).
-        e.preventDefault();
-        void api.openCapture("text").catch((err) => toast.error(String(err)));
-      } else if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K")) {
+      if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K")) {
         // Ctrl+K — focus the persistent search field.
         e.preventDefault();
         searchInputRef.current?.focus();

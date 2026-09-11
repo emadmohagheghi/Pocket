@@ -14,8 +14,6 @@ import type {
   WorkspaceInfo,
 } from "@/types";
 
-export type CaptureMode = "text" | "voice";
-
 export const api = {
   getState: () => invoke<InitialState>("get_state"),
   frontendReady: () => invoke<void>("frontend_ready"),
@@ -86,7 +84,7 @@ export const api = {
   exportBackup: (path: string) => invoke<ExportSummary>("export_backup", { path }),
   importBackup: (path: string) => invoke<ImportSummary>("import_backup", { path }),
 
-  openCapture: (mode: CaptureMode) => invoke<void>("open_capture", { mode }),
+  openVoiceCapture: () => invoke<void>("open_voice_capture"),
   log: (message: string) => invoke<void>("frontend_log", { message }).catch(() => {}),
 };
 

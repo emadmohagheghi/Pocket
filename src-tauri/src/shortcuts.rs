@@ -21,30 +21,6 @@ pub struct AppFlags {
 #[serde(rename_all = "camelCase")]
 pub struct CaptureOpenPayload {
     pub mode: String,
-    /// Text auto-grabbed from the foreground app's selection (if any).
-    /// `None` means "open empty" — never stale clipboard content.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-}
-
-/// Show the quick-capture window (or hide it if it is already visible).
-pub fn toggle_quick_capture(app: &AppHandle) {
-    let Some(win) = app.get_webview_window("quick-capture") else {
-        eprintln!("[pocket] quick-capture window not found!");
-        return;
-    };
-    match win.is_visible() {
-        Ok(true) => {
-            debug_log("capture window visible -> hiding");
-            let _ = win.hide();
-        }
-        res => {
-            debug_log(&format!(
-                "capture window is_visible={res:?} -> showing (text mode)"
-            ));
-            show_capture(app, "text");
-        }
-    }
 }
 
 /// Show the quick-capture window in voice mode.
@@ -68,10 +44,6 @@ pub fn finish_held_voice_capture(app: &AppHandle) {
 }
 
 fn show_capture(app: &AppHandle, mode: &str) {
-    show_capture_with_text(app, mode, None);
-}
-
-fn show_capture_with_text(app: &AppHandle, mode: &str, text: Option<String>) {
     let Some(win) = app.get_webview_window("quick-capture") else {
         eprintln!("[pocket] quick-capture window not found!");
         return;
@@ -80,13 +52,12 @@ fn show_capture_with_text(app: &AppHandle, mode: &str, text: Option<String>) {
     let shown = win.show();
     let focused = win.set_focus();
     debug_log(&format!(
-        "show_capture(mode={mode}) show={shown:?} focus={focused:?} prefill_len={}",
-        text.as_ref().map(|t| t.len()).unwrap_or(0)
+        "show_capture(mode={mode}) show={shown:?} focus={focused:?}"
     ));
     let _ = app.emit_to(
         "quick-capture",
         "capture-open",
-        CaptureOpenPayload { mode: mode.into(), text },
+        CaptureOpenPayload { mode: mode.into() },
     );
 }
 
@@ -95,18 +66,14 @@ fn show_capture_with_text(app: &AppHandle, mode: &str, text: Option<String>) {
 /// `play-sfx` event goes to the (hidden) capture webview, which plays the
 /// capture confirmation sound.
 pub fn save_text_capture_from_hotkey(app: &AppHandle) {
-    // If the capture panel happens to be visible, dismiss it first: it would
-    // be the foreground window, so both the Ctrl+C and the save would target
-    // ourselves instead of the app the user is reading.
+    // A visible capture panel is voice-only. Ignore a text gesture rather than
+    // hiding an active recording and accidentally leaving its microphone live.
     let visible = app
         .get_webview_window("quick-capture")
         .map(|w| w.is_visible().unwrap_or(false))
         .unwrap_or(false);
     if visible {
-        debug_log("capture window visible -> hiding");
-        if let Some(win) = app.get_webview_window("quick-capture") {
-            let _ = win.hide();
-        }
+        debug_log("voice capture visible -> ignoring text capture gesture");
         return;
     }
     let app_handle = app.clone();
@@ -263,7 +230,8 @@ fn clear_clipboard() {
 /// Current clipboard Unicode text, if any. Retries briefly — the clipboard is
 /// often momentarily locked by the app that owns it.
 #[cfg(windows)]
-fn read_clipboard_text() -> Option<String> {    use windows::Win32::Foundation::HGLOBAL;
+fn read_clipboard_text() -> Option<String> {
+    use windows::Win32::Foundation::HGLOBAL;
     use windows::Win32::System::DataExchange::{
         CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
     };
@@ -317,8 +285,8 @@ fn read_clipboard_text() -> Option<String> {    use windows::Win32::Foundation::
 #[cfg(windows)]
 fn send_ctrl_c() -> bool {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
-        SendInput, VIRTUAL_KEY, VK_C, VK_CONTROL,
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+        VIRTUAL_KEY, VK_C, VK_CONTROL,
     };
 
     let key = |vk: VIRTUAL_KEY, up: bool| INPUT {
@@ -351,7 +319,12 @@ pub fn debug_log(message: &str) {
     if std::env::var("POCKET_DEBUG").as_deref() == Ok("1") {
         let t = now_ms() % 1_000_000;
         let tid = unsafe { windows::Win32::System::Threading::GetCurrentThreadId() };
-        eprintln!("[pocket {:>6}.{:03} t{:x}] {message}", t / 1000, t % 1000, tid);
+        eprintln!(
+            "[pocket {:>6}.{:03} t{:x}] {message}",
+            t / 1000,
+            t % 1000,
+            tid
+        );
     }
 }
 
@@ -376,14 +349,15 @@ pub mod double_shift {
     use windows::Win32::UI::Input::KeyboardAndMouse::{VK_LSHIFT, VK_RSHIFT, VK_SHIFT};
     use windows::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, GetMessageW, PostThreadMessageW, SetWindowsHookExW, HC_ACTION, HHOOK,
-        KBDLLHOOKSTRUCT, KBDLLHOOKSTRUCT_FLAGS, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP,
-        WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
+        KBDLLHOOKSTRUCT, KBDLLHOOKSTRUCT_FLAGS, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_QUIT,
+        WM_SYSKEYDOWN, WM_SYSKEYUP,
     };
 
     const LLKHF_INJECTED: KBDLLHOOKSTRUCT_FLAGS = KBDLLHOOKSTRUCT_FLAGS(0x10);
     const DOUBLE_SHIFT_WINDOW_MS: u64 = 450;
     const REPEAT_GUARD_MS: u64 = 60;
-    /// Second Shift press held this long opens voice mode instead of text.
+    /// Second Shift press held this long opens the voice panel instead of
+    /// directly saving the selected text.
     /// The watcher polls the physical key state, so a quick tap-tap-release
     /// still resolves to text as soon as the release is seen (no added
     /// latency), while a tap-hold resolves to voice after this threshold.
@@ -527,7 +501,11 @@ pub mod double_shift {
     fn hook_file_log(msg: &str) {
         use std::io::Write;
         let path = std::env::temp_dir().join("pocket-hook-debug.log");
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
             let _ = writeln!(f, "{msg}");
         }
     }
@@ -543,7 +521,12 @@ pub mod double_shift {
                 debug_log(&format!("watchdog tick -> posting WM_QUIT to t{tid:x}"));
                 if tid != 0 {
                     unsafe {
-                        let _ = PostThreadMessageW(tid, WM_QUIT, Default::default(), Default::default());
+                        let _ = PostThreadMessageW(
+                            tid,
+                            WM_QUIT,
+                            Default::default(),
+                            Default::default(),
+                        );
                     }
                 }
             })
@@ -650,7 +633,8 @@ pub mod double_shift {
         if HOOK_DEBUG.load(Ordering::Relaxed) {
             eprintln!(
                 "[pocket:hook] shift down elapsed={elapsed}ms window_open={} intervening={}",
-                elapsed <= DOUBLE_SHIFT_WINDOW_MS, side_state.intervening_key
+                elapsed <= DOUBLE_SHIFT_WINDOW_MS,
+                side_state.intervening_key
             );
         }
         side_state.last_shift_down_ms = ms;
@@ -687,7 +671,11 @@ pub mod double_shift {
     /// Pure hold decision, unit-tested below. `released_early` means the
     /// second press was released before the hold threshold elapsed.
     fn hold_decision(released_early: bool) -> &'static str {
-        if released_early { "text" } else { "voice" }
+        if released_early {
+            "text"
+        } else {
+            "voice"
+        }
     }
 
     fn try_trigger(app: &AppHandle, side: ShiftSide) {
@@ -714,10 +702,10 @@ pub mod double_shift {
                     return;
                 }
 
-                // Wait for either an early release (tap -> text mode) or the
-                // hold threshold elapsing with Shift still down (hold ->
-                // voice mode). Polling keeps tap-tap snappy: text opens as
-                // soon as the release is seen instead of after a fixed delay.
+                // Wait for either an early release (tap -> direct text save)
+                // or the hold threshold elapsing with Shift still down (hold
+                // -> voice panel). Polling resolves a tap as soon as release
+                // is seen instead of adding a fixed delay.
                 let mut elapsed_ms: u64 = 0;
                 let mut released_early = false;
                 while elapsed_ms < HOLD_FOR_VOICE_MS {
@@ -730,7 +718,7 @@ pub mod double_shift {
                 }
                 let mode = hold_decision(released_early);
                 // E2E-injected keys have no physical state, so they always
-                // look "released": they correctly resolve to text mode.
+                // look "released": they correctly resolve to direct text save.
                 debug_log(&format!(
                     "double-shift hold watch: released_early={released_early} elapsed={elapsed_ms}ms -> {mode} mode"
                 ));
@@ -801,15 +789,30 @@ pub mod double_shift {
             // Same timing, but no release happened between presses.
             assert!(!is_double_press(1000, 1150, false, false));
             // Even far apart in time, without a release it must not fire.
-            assert!(!is_double_press(1000, 1000 + DOUBLE_SHIFT_WINDOW_MS, false, false));
+            assert!(!is_double_press(
+                1000,
+                1000 + DOUBLE_SHIFT_WINDOW_MS,
+                false,
+                false
+            ));
         }
 
         #[test]
         fn too_slow_or_first_press_does_not_trigger() {
             // Outside the double-tap window.
-            assert!(!is_double_press(1000, 1000 + DOUBLE_SHIFT_WINDOW_MS + 1, false, true));
+            assert!(!is_double_press(
+                1000,
+                1000 + DOUBLE_SHIFT_WINDOW_MS + 1,
+                false,
+                true
+            ));
             // Faster than humanly possible (repeat guard).
-            assert!(!is_double_press(1000, 1000 + REPEAT_GUARD_MS - 1, false, true));
+            assert!(!is_double_press(
+                1000,
+                1000 + REPEAT_GUARD_MS - 1,
+                false,
+                true
+            ));
             // First press ever.
             assert!(!is_double_press(0, 1150, false, true));
         }
@@ -821,7 +824,7 @@ pub mod double_shift {
 
         #[test]
         fn hold_resolves_to_voice_and_tap_to_text() {
-            // Second press released before the threshold -> text mode.
+            // Second press released before the threshold -> direct text save.
             assert_eq!(hold_decision(true), "text");
             // Still held when the threshold elapses -> voice mode.
             assert_eq!(hold_decision(false), "voice");

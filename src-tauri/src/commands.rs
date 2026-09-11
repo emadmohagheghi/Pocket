@@ -148,7 +148,9 @@ pub async fn export_backup(app: AppHandle, path: String) -> AppResult<ExportSumm
     }
     let destination = PathBuf::from(path);
     if destination.file_name().is_none() {
-        return Err(AppError::Invalid("export path must include a file name".into()));
+        return Err(AppError::Invalid(
+            "export path must include a file name".into(),
+        ));
     }
 
     let (prepared, summary) = {
@@ -171,7 +173,9 @@ pub async fn import_backup(app: AppHandle, path: String) -> AppResult<ImportSumm
     }
     let source = PathBuf::from(path);
     if source.file_name().is_none() {
-        return Err(AppError::Invalid("import path must include a file name".into()));
+        return Err(AppError::Invalid(
+            "import path must include a file name".into(),
+        ));
     }
 
     let import_app = app.clone();
@@ -625,14 +629,10 @@ pub fn get_gaming_state(app: AppHandle) -> AppResult<bool> {
     Ok(shared.gaming.load(Ordering::Relaxed))
 }
 
-/// Opens the quick-capture window from the main window ("text" or "voice").
+/// Opens the voice-capture panel from the main window.
 #[tauri::command]
-pub fn open_capture(app: AppHandle, mode: Option<String>) -> AppResult<()> {
-    if mode.as_deref() == Some("voice") {
-        crate::shortcuts::show_voice_capture(&app);
-    } else {
-        crate::shortcuts::toggle_quick_capture(&app);
-    }
+pub fn open_voice_capture(app: AppHandle) -> AppResult<()> {
+    crate::shortcuts::show_voice_capture(&app);
     Ok(())
 }
 
