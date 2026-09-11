@@ -12,6 +12,8 @@ interface QcStore {
   load: () => Promise<void>;
 }
 
+export type CaptureOpenMode = "text" | "voice" | "voice-hold";
+
 /** Lightweight store for the quick-capture window (no item data needed). */
 export const useQc = create<QcStore>((set) => ({
   settings: null,
@@ -29,7 +31,7 @@ export const useQc = create<QcStore>((set) => ({
 let wired = false;
 
 export function useQcEvents(
-  onCaptureOpen: (mode: "text" | "voice", prefill: string | null) => void
+  onCaptureOpen: (mode: CaptureOpenMode, prefill: string | null) => void
 ) {
   useEffect(() => {
     if (!wired) {
@@ -40,7 +42,7 @@ export function useQcEvents(
       );
     }
     void useQc.getState().load();
-    const unlistenP = listen<{ mode: "text" | "voice"; text?: string | null }>(
+    const unlistenP = listen<{ mode: CaptureOpenMode; text?: string | null }>(
       "capture-open",
       (e) => {
         const prefill = e.payload.text ?? null;

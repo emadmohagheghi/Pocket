@@ -316,6 +316,33 @@ pub fn create_item(app: AppHandle, workspace_id: String, item: NewItem) -> AppRe
     created
 }
 
+/// Double-Shift tap path: save the grabbed selection straight into the active
+/// workspace without opening any window. Refreshes main-window listeners the
+/// same way `create_item` does.
+pub fn save_hotkey_text_capture(app: &AppHandle, text: String) -> AppResult<Item> {
+    let (ws_id, created) = {
+        let store = app.state::<Mutex<Store>>();
+        let mut store = store.lock().unwrap();
+        let ws_id = store.settings.active_workspace_id.clone();
+        let created = store.create_item(
+            &ws_id,
+            NewItem {
+                item_type: ItemType::Text,
+                content: text,
+                title: None,
+                url: None,
+            },
+        )?;
+        (ws_id, created)
+    };
+    crate::shortcuts::debug_log(&format!(
+        "hotkey text capture saved id={} ws={ws_id}",
+        created.id
+    ));
+    items_changed(app, &ws_id);
+    Ok(created)
+}
+
 #[tauri::command]
 pub fn update_item(
     app: AppHandle,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { listen } from "@tauri-apps/api/event";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import {
   AudioLines,
@@ -15,6 +16,20 @@ import { useQc, useQcEvents } from "@/qcStore";
 import { useRecorder } from "@/hooks/useRecorder";
 import { NebulaOrb } from "@/components/NebulaOrb";
 import { cn, formatDuration, looksLikeUrl } from "@/lib/utils";
+import textSfxUrl from "@/assets/sounds/capture-text.mp3";
+import voiceSfxUrl from "@/assets/sounds/capture-voice.mp3";
+
+// Preloaded so a capture sound plays with no decode latency. The Rust side
+// emits "play-sfx" for the double-shift tap (direct save, no window shown);
+// the voice sound plays here when a capture-open arrives in voice mode.
+const textSfx = new Audio(textSfxUrl);
+const voiceSfx = new Audio(voiceSfxUrl);
+
+function playSfx(kind: string) {
+  const audio = kind === "voice" ? voiceSfx : textSfx;
+  audio.currentTime = 0;
+  void audio.play().catch((e) => void api.log(`sfx ${kind} failed: ${e}`));
+}
 
 export default function QuickCaptureWindow() {
   const { settings, workspaces } = useQc();
@@ -23,6 +38,14 @@ export default function QuickCaptureWindow() {
   const [savedFlash, setSavedFlash] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recorder = useRecorder();
+  const heldVoiceActiveRef = useRef(false);
+  const heldVoiceReleasedRef = useRef(false);
+  const leftVoiceStopRequestedRef = useRef(false);
+  const automaticVoiceSaveStartedRef = useRef(false);
+  const recorderRecordingRef = useRef(false);
+  const stopAndSaveRef = useRef<() => Promise<void>>(async () => {});
+  const finishAutomaticVoiceRef = useRef<() => void>(() => {});
+  recorderRecordingRef.current = recorder.recording;
 
   // Match the main window's theme; without this the bar renders light while
   // the main widget is dark.
@@ -47,6 +70,10 @@ export default function QuickCaptureWindow() {
     setMode("text");
     setContent("");
     setSavedFlash(false);
+    heldVoiceActiveRef.current = false;
+    heldVoiceReleasedRef.current = false;
+    leftVoiceStopRequestedRef.current = false;
+    automaticVoiceSaveStartedRef.current = false;
   }, [win, recorder.cancel]);
 
   const flashThenHide = useCallback(() => {
@@ -56,10 +83,25 @@ export default function QuickCaptureWindow() {
 
   // Global capture-open event → configure and focus.
   useQcEvents((openMode, prefill) => {
-    setMode(openMode);
+    // A second Left-Shift double-hold while voice capture is live keeps the
+    // established toggle behavior: stop and save the current recording.
+    if (openMode === "voice" && recorder.isBusy()) {
+      leftVoiceStopRequestedRef.current = true;
+      finishAutomaticVoiceRef.current();
+      return;
+    }
+
+    const isVoice = openMode !== "text";
+    const isHeldVoice = openMode === "voice-hold";
+    setMode(isVoice ? "voice" : "text");
     setContent(prefill ?? "");
     setSavedFlash(false);
-    if (openMode === "voice") {
+    heldVoiceActiveRef.current = isHeldVoice;
+    heldVoiceReleasedRef.current = false;
+    leftVoiceStopRequestedRef.current = false;
+    automaticVoiceSaveStartedRef.current = false;
+    if (isVoice) {
+      playSfx("voice");
       void recorder.start();
     } else {
       requestAnimationFrame(() => {
@@ -68,6 +110,15 @@ export default function QuickCaptureWindow() {
       });
     }
   });
+
+  // Double-shift tap: Rust saved the selected text without showing this
+  // window and asks us to confirm with a sound.
+  useEffect(() => {
+    const unlistenP = listen<string>("play-sfx", (e) => playSfx(e.payload));
+    return () => {
+      void unlistenP.then((f) => f());
+    };
+  }, []);
 
   // Hide when losing focus (unless recording or showing a flash).
   useEffect(() => {
@@ -145,6 +196,43 @@ export default function QuickCaptureWindow() {
       toast.error(`Could not save recording: ${e}`);
     }
   };
+
+  stopAndSaveRef.current = stopAndSave;
+
+  const finishAutomaticVoice = useCallback(() => {
+    const saveRequested =
+      leftVoiceStopRequestedRef.current ||
+      (heldVoiceActiveRef.current && heldVoiceReleasedRef.current);
+    if (
+      !saveRequested ||
+      automaticVoiceSaveStartedRef.current ||
+      !recorderRecordingRef.current
+    ) {
+      return;
+    }
+    automaticVoiceSaveStartedRef.current = true;
+    void stopAndSaveRef.current();
+  }, []);
+  finishAutomaticVoiceRef.current = finishAutomaticVoice;
+
+  // Right Shift release can arrive while getUserMedia is still resolving.
+  // Remember it, then finish as soon as MediaRecorder reports live.
+  useEffect(() => {
+    const unlistenP = listen("voice-hold-release", () => {
+      if (!heldVoiceActiveRef.current) return;
+      heldVoiceReleasedRef.current = true;
+      finishAutomaticVoice();
+    });
+    return () => {
+      void unlistenP.then((f) => f());
+    };
+  }, [finishAutomaticVoice]);
+
+  useEffect(() => {
+    if (recorder.recording) {
+      finishAutomaticVoice();
+    }
+  }, [finishAutomaticVoice, recorder.recording]);
 
   if (mode === "voice") {
     return (

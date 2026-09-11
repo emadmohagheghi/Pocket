@@ -53,6 +53,20 @@ pub fn show_voice_capture(app: &AppHandle) {
     show_capture(app, "voice");
 }
 
+/// Show voice capture for the Right-Shift press-and-hold gesture. The mode is
+/// distinct so the frontend knows that releasing Right Shift must save.
+pub fn show_held_voice_capture(app: &AppHandle) {
+    debug_log("held voice capture requested");
+    show_capture(app, "voice-hold");
+}
+
+/// Tell the already-loaded capture webview that Right Shift was released.
+/// The frontend waits for MediaRecorder startup when needed, then saves once.
+pub fn finish_held_voice_capture(app: &AppHandle) {
+    debug_log("held voice capture released -> requesting stop and save");
+    let _ = app.emit_to("quick-capture", "voice-hold-release", ());
+}
+
 fn show_capture(app: &AppHandle, mode: &str) {
     show_capture_with_text(app, mode, None);
 }
@@ -76,10 +90,14 @@ fn show_capture_with_text(app: &AppHandle, mode: &str, text: Option<String>) {
     );
 }
 
-/// Double-Shift path: like `toggle_quick_capture`, but first auto-grabs the
-/// foreground app's selected text (if any) on a worker thread so neither the
-/// hook callback nor the UI thread ever blocks.
-pub fn show_text_capture_from_hotkey(app: &AppHandle) {
+/// Double-Shift tap path: grab the foreground app's selected text and save it
+/// straight into the active workspace — no window opens. On success a
+/// `play-sfx` event goes to the (hidden) capture webview, which plays the
+/// capture confirmation sound.
+pub fn save_text_capture_from_hotkey(app: &AppHandle) {
+    // If the capture panel happens to be visible, dismiss it first: it would
+    // be the foreground window, so both the Ctrl+C and the save would target
+    // ourselves instead of the app the user is reading.
     let visible = app
         .get_webview_window("quick-capture")
         .map(|w| w.is_visible().unwrap_or(false))
@@ -95,11 +113,21 @@ pub fn show_text_capture_from_hotkey(app: &AppHandle) {
     std::thread::Builder::new()
         .name("grab-selection".into())
         .spawn(move || {
-            grab_log("grab: worker started (double-shift trigger)");
+            grab_log("grab: worker started (double-shift tap -> direct save)");
             let grabbed = grab_selected_text();
-            let for_closure = app_handle.clone();
+            let for_main = app_handle.clone();
             let _ = app_handle.run_on_main_thread(move || {
-                show_capture_with_text(&for_closure, "text", grabbed);
+                let Some(text) = grabbed.filter(|t| !t.trim().is_empty()) else {
+                    grab_log("grab: nothing selected -> nothing saved, no sound");
+                    return;
+                };
+                match crate::commands::save_hotkey_text_capture(&for_main, text) {
+                    Ok(item) => {
+                        grab_log(&format!("grab: saved id={} -> text sfx", item.id));
+                        let _ = for_main.emit_to("quick-capture", "play-sfx", "text");
+                    }
+                    Err(e) => grab_log(&format!("grab: direct save FAILED: {e}")),
+                }
             });
         })
         .ok();
@@ -365,6 +393,12 @@ pub mod double_shift {
     const HOLD_FOR_VOICE_MS: u64 = 400;
     const HOLD_POLL_MS: u64 = 15;
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum ShiftSide {
+        Left,
+        Right,
+    }
+
     /// Windows silently drops low-level hooks whose callback misses the
     /// system timeout (e.g. while the process is saturated during startup).
     /// As a safety net the hook is re-registered on this interval; the cost
@@ -388,8 +422,7 @@ pub mod double_shift {
         std::env::var("POCKET_E2E_KEYS").as_deref() == Ok("1")
     }
 
-    struct HookState {
-        app: AppHandle,
+    struct PressState {
         last_shift_down_ms: u64,
         intervening_key: bool,
         /// True once Shift has been released since the previous Shift press.
@@ -398,6 +431,22 @@ pub mod double_shift {
         /// can never look like a second press — this is what makes holding
         /// Shift safe regardless of repeat timing jitter.
         released_since_down: bool,
+    }
+
+    impl Default for PressState {
+        fn default() -> Self {
+            Self {
+                last_shift_down_ms: 0,
+                intervening_key: false,
+                released_since_down: true,
+            }
+        }
+    }
+
+    struct HookState {
+        app: AppHandle,
+        left: PressState,
+        right: PressState,
     }
 
     thread_local! {
@@ -430,9 +479,8 @@ pub mod double_shift {
         STATE.with(|s| {
             *s.borrow_mut() = Some(HookState {
                 app,
-                last_shift_down_ms: 0,
-                intervening_key: false,
-                released_since_down: true,
+                left: PressState::default(),
+                right: PressState::default(),
             });
         });
         HOOK_DEBUG.store(debug_enabled(), Ordering::Relaxed);
@@ -516,9 +564,16 @@ pub mod double_shift {
             let injected = (kb.flags & LLKHF_INJECTED).0 != 0;
             // NOTE: the LL hook reports VK_LSHIFT / VK_RSHIFT for real
             // keyboards — VK_SHIFT alone never matches.
-            let is_shift = kb.vkCode == VK_LSHIFT.0 as u32
-                || kb.vkCode == VK_RSHIFT.0 as u32
-                || kb.vkCode == VK_SHIFT.0 as u32;
+            let shift_side = if kb.vkCode == VK_RSHIFT.0 as u32 {
+                Some(ShiftSide::Right)
+            } else if kb.vkCode == VK_LSHIFT.0 as u32 || kb.vkCode == VK_SHIFT.0 as u32 {
+                // VK_SHIFT is only expected from injected E2E input. Treat it
+                // as Left so the established gesture remains testable.
+                Some(ShiftSide::Left)
+            } else {
+                None
+            };
+            let is_shift = shift_side.is_some();
             if is_shift {
                 // Rare enough to be safe for diagnostics; proves whether the
                 // callback sees shift events at all.
@@ -538,7 +593,7 @@ pub mod double_shift {
                 }
                 STATE.with(|s| {
                     if let Some(state) = s.borrow_mut().as_mut() {
-                        handle_key(state, is_shift, is_keydown);
+                        handle_key(state, shift_side, is_keydown);
                     }
                 });
             }
@@ -562,19 +617,25 @@ pub mod double_shift {
             && now_ms.saturating_sub(last_down_ms) <= DOUBLE_SHIFT_WINDOW_MS
     }
 
-    fn handle_key(state: &mut HookState, is_shift: bool, is_keydown: bool) {
-        if !is_shift {
+    fn handle_key(state: &mut HookState, shift_side: Option<ShiftSide>, is_keydown: bool) {
+        let Some(side) = shift_side else {
             if is_keydown {
-                state.intervening_key = true;
+                state.left.intervening_key = true;
+                state.right.intervening_key = true;
             }
             return;
-        }
+        };
+
+        let side_state = match side {
+            ShiftSide::Left => &mut state.left,
+            ShiftSide::Right => &mut state.right,
+        };
         if !is_keydown {
             // Shift released: the next press is a genuinely new press.
-            state.released_since_down = true;
+            side_state.released_since_down = true;
             return;
         }
-        if !state.released_since_down {
+        if !side_state.released_since_down {
             // Shift is being held down (OS auto-repeat): not a new press.
             if HOOK_DEBUG.load(Ordering::Relaxed) {
                 eprintln!("[pocket:hook] shift repeat ignored (held, no release yet)");
@@ -582,37 +643,47 @@ pub mod double_shift {
             return;
         }
         let ms = now_ms();
-        let elapsed = ms.saturating_sub(state.last_shift_down_ms);
+        let elapsed = ms.saturating_sub(side_state.last_shift_down_ms);
         let double_shift = is_double_press(
-            state.last_shift_down_ms,
+            side_state.last_shift_down_ms,
             ms,
-            state.intervening_key,
-            state.released_since_down,
+            side_state.intervening_key,
+            side_state.released_since_down,
         );
         if HOOK_DEBUG.load(Ordering::Relaxed) {
             eprintln!(
                 "[pocket:hook] shift down elapsed={elapsed}ms window_open={} intervening={}",
-                elapsed <= DOUBLE_SHIFT_WINDOW_MS, state.intervening_key
+                elapsed <= DOUBLE_SHIFT_WINDOW_MS, side_state.intervening_key
             );
         }
-        if double_shift {
-            try_trigger(&state.app);
+        side_state.last_shift_down_ms = ms;
+        side_state.intervening_key = false;
+        side_state.released_since_down = false;
+
+        // A press of the other Shift key breaks that side's pair, preventing
+        // Left-then-Right from being interpreted as a double press.
+        match side {
+            ShiftSide::Left => state.right.intervening_key = true,
+            ShiftSide::Right => state.left.intervening_key = true,
         }
-        state.last_shift_down_ms = ms;
-        state.intervening_key = false;
-        state.released_since_down = false;
+
+        if double_shift {
+            try_trigger(&state.app, side);
+        }
     }
 
-    /// True while either physical Shift key is held down. Polled from the
-    /// hold-watcher thread (never from inside the hook callback).
-    fn is_shift_physically_down() -> bool {
+    /// True while the requested physical Shift key is held down. Polled from
+    /// watcher threads, never from inside the low-level hook callback.
+    fn is_shift_physically_down(side: ShiftSide) -> bool {
         unsafe {
             use windows::Win32::UI::Input::KeyboardAndMouse::{
                 GetAsyncKeyState, VK_LSHIFT, VK_RSHIFT,
             };
-            let l = GetAsyncKeyState(VK_LSHIFT.0 as i32) as u16;
-            let r = GetAsyncKeyState(VK_RSHIFT.0 as i32) as u16;
-            (l & 0x8000) != 0 || (r & 0x8000) != 0
+            let key = match side {
+                ShiftSide::Left => VK_LSHIFT,
+                ShiftSide::Right => VK_RSHIFT,
+            };
+            (GetAsyncKeyState(key.0 as i32) as u16 & 0x8000) != 0
         }
     }
 
@@ -622,21 +693,30 @@ pub mod double_shift {
         if released_early { "text" } else { "voice" }
     }
 
-    fn try_trigger(app: &AppHandle) {
+    fn try_trigger(app: &AppHandle, side: ShiftSide) {
         let shared = app.state::<super::AppFlags>();
         if shared.gaming.load(Ordering::Relaxed) {
             debug_log("double-shift suppressed (gaming mode)");
             return;
         }
-        debug_log("DOUBLE SHIFT detected -> watching for hold (voice) vs tap (text)");
+        debug_log(&format!("DOUBLE {side:?} SHIFT detected"));
         // Never touch window APIs from inside the hook callback: the hold
         // watcher runs on its own thread and dispatches the window work to
         // the main thread, so the callback returns instantly (a slow
         // callback gets the hook removed by the system).
         let app_handle = app.clone();
+        let thread_name = match side {
+            ShiftSide::Left => "left-shift-hold-watch",
+            ShiftSide::Right => "right-shift-hold-watch",
+        };
         std::thread::Builder::new()
-            .name("double-shift-hold-watch".into())
+            .name(thread_name.into())
             .spawn(move || {
+                if side == ShiftSide::Right {
+                    watch_right_hold(app_handle);
+                    return;
+                }
+
                 // Wait for either an early release (tap -> text mode) or the
                 // hold threshold elapsing with Shift still down (hold ->
                 // voice mode). Polling keeps tap-tap snappy: text opens as
@@ -644,7 +724,7 @@ pub mod double_shift {
                 let mut elapsed_ms: u64 = 0;
                 let mut released_early = false;
                 while elapsed_ms < HOLD_FOR_VOICE_MS {
-                    if !is_shift_physically_down() {
+                    if !is_shift_physically_down(ShiftSide::Left) {
                         released_early = true;
                         break;
                     }
@@ -669,11 +749,44 @@ pub mod double_shift {
                     if mode == "voice" {
                         super::show_voice_capture(&for_main);
                     } else {
-                        super::show_text_capture_from_hotkey(&for_main);
+                        super::save_text_capture_from_hotkey(&for_main);
                     }
                 });
             })
             .ok();
+    }
+
+    /// Right Shift is push-to-record: a quick double tap does nothing, while
+    /// holding the second press starts recording and release saves it.
+    fn watch_right_hold(app_handle: AppHandle) {
+        let mut elapsed_ms: u64 = 0;
+        while elapsed_ms < HOLD_FOR_VOICE_MS {
+            if !is_shift_physically_down(ShiftSide::Right) {
+                debug_log("right double-shift released early -> no action");
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(HOLD_POLL_MS));
+            elapsed_ms += HOLD_POLL_MS;
+        }
+
+        let for_open = app_handle.clone();
+        let _ = app_handle.run_on_main_thread(move || {
+            let shared = for_open.state::<super::AppFlags>();
+            if shared.gaming.load(Ordering::Relaxed) {
+                debug_log("right-shift hold suppressed after gaming mode enabled");
+                return;
+            }
+            super::show_held_voice_capture(&for_open);
+        });
+
+        while is_shift_physically_down(ShiftSide::Right) {
+            std::thread::sleep(std::time::Duration::from_millis(HOLD_POLL_MS));
+        }
+
+        let for_release = app_handle.clone();
+        let _ = app_handle.run_on_main_thread(move || {
+            super::finish_held_voice_capture(&for_release);
+        });
     }
 
     #[cfg(test)]

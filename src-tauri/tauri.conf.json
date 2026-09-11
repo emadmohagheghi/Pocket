@@ -38,11 +38,12 @@
         "resizable": false,
         "center": true,
         "transparent": true,
-        "shadow": false
+        "shadow": false,
+        "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost; img-src 'self' data:; media-src 'self' http://voice.localhost https://voice.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost; img-src 'self' data:; media-src 'self' data: http://voice.localhost https://voice.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
     }
   },
   "bundle": {
