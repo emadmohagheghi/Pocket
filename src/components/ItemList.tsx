@@ -1,12 +1,12 @@
 import { useId, useMemo, useRef, useState } from "react";
-import { Mic, Plus, Square } from "lucide-react";
+import { Mic, Pin, Plus, Square } from "lucide-react";
 import { toast } from "sonner";
 
 import { usePocket } from "@/store";
 import { api } from "@/lib/api";
-import { formatDuration } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
 import { useRecorder } from "@/hooks/useRecorder";
-import type { Item, Recording } from "@/types";
+import type { EntryKind, Item, Recording } from "@/types";
 import { ItemRow } from "@/components/ItemRow";
 import { VoiceRow } from "@/components/VoiceList";
 import { Button } from "@/components/ui/button";
@@ -38,12 +38,17 @@ const CAPTURE_BAR_CLASS =
 
 /** Single unified feed: text items and voice recordings together, newest first. */
 export function ItemList() {
-  const { data, focusItemId } = usePocket();
+  const { data, focusItemId, settings, setEntryPinned } = usePocket();
   const listRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState<{
+    id: string;
+    kind: EntryKind;
+    pinned: boolean;
+  } | null>(null);
 
   const items = useMemo<Item[]>(() => data?.items ?? [], [data]);
 
-  const groups = useMemo(() => {
+  const { pinnedEntries, groups } = useMemo(() => {
     const entries: FeedEntry[] = [
       ...items.map(
         (item): FeedEntry => ({
@@ -62,45 +67,141 @@ export function ItemList() {
         })
       ),
     ].sort((a, b) => b.createdAt - a.createdAt);
+    const pinnedEntries = entries.filter((entry) =>
+      entry.kind === "text" ? entry.item.pinned : entry.recording.pinned
+    );
+    const chronologicalEntries = entries.filter((entry) =>
+      entry.kind === "text" ? !entry.item.pinned : !entry.recording.pinned
+    );
     const order = ["Today", "Yesterday", "Earlier"];
     const map = new Map<string, FeedEntry[]>();
-    for (const entry of entries) {
+    for (const entry of chronologicalEntries) {
       const label = groupLabel(entry.createdAt);
       if (!map.has(label)) map.set(label, []);
       map.get(label)!.push(entry);
     }
-    return order
-      .filter((label) => map.has(label))
-      .map((label) => ({ label, entries: map.get(label)! }));
+    return {
+      pinnedEntries,
+      groups: order
+        .filter((label) => map.has(label))
+        .map((label) => ({ label, entries: map.get(label)! })),
+    };
   }, [items, data]);
 
-  const total = groups.reduce((n, g) => n + g.entries.length, 0);
+  const total = pinnedEntries.length + groups.reduce((n, g) => n + g.entries.length, 0);
   if (!data || total === 0) return null;
 
+  const dragMode = settings?.pinControlStyle === "drag";
+
+  const startDrag = (
+    event: React.DragEvent,
+    kind: EntryKind,
+    id: string,
+    pinned: boolean
+  ) => {
+    event.stopPropagation();
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `${kind}:${id}`);
+    setDragging({ kind, id, pinned });
+  };
+
+  const dropAs = (pinned: boolean) => {
+    if (!dragging || dragging.pinned === pinned) return;
+    void setEntryPinned(dragging.kind, dragging.id, pinned);
+    setDragging(null);
+  };
+
+  const renderEntry = (entry: FeedEntry) =>
+    entry.kind === "text" ? (
+      <ItemRow
+        key={entry.key}
+        item={entry.item}
+        focused={entry.item.id === focusItemId}
+        onEntryDragStart={(event, id, pinned) =>
+          startDrag(event, "text", id, pinned)
+        }
+      />
+    ) : (
+      <VoiceRow
+        key={entry.key}
+        recording={entry.recording}
+        focused={entry.recording.id === focusItemId}
+        onEntryDragStart={(event, id, pinned) =>
+          startDrag(event, "voice", id, pinned)
+        }
+      />
+    );
+
   return (
-    <div ref={listRef} className="px-1 pt-1" role="list">
+    <div
+      ref={listRef}
+      className="px-1 pt-1"
+      role="list"
+      onDragEnd={() => setDragging(null)}
+    >
+      {dragMode ? (
+        <PinDropZone
+          label="Drag here to pin"
+          active={Boolean(dragging && !dragging.pinned)}
+          onDrop={() => dropAs(true)}
+        />
+      ) : null}
+
+      {pinnedEntries.length > 0 ? (
+        <section>
+          <SectionLabel>Pinned</SectionLabel>
+          <div className="divide-y divide-border/70" role="list">
+            {pinnedEntries.map(renderEntry)}
+          </div>
+        </section>
+      ) : null}
+
+      {dragMode && pinnedEntries.length > 0 ? (
+        <PinDropZone
+          label="Drag here to unpin"
+          active={Boolean(dragging?.pinned)}
+          onDrop={() => dropAs(false)}
+        />
+      ) : null}
+
       {groups.map(({ label, entries }) => (
         <section key={label}>
           <SectionLabel>{label}</SectionLabel>
           <div className="divide-y divide-border/70" role="list">
-            {entries.map((entry) =>
-              entry.kind === "text" ? (
-                <ItemRow
-                  key={entry.key}
-                  item={entry.item}
-                  focused={entry.item.id === focusItemId}
-                />
-              ) : (
-                <VoiceRow
-                  key={entry.key}
-                  recording={entry.recording}
-                  focused={entry.recording.id === focusItemId}
-                />
-              )
-            )}
+            {entries.map(renderEntry)}
           </div>
         </section>
       ))}
+    </div>
+  );
+}
+
+function PinDropZone({
+  label,
+  active,
+  onDrop,
+}: {
+  label: string;
+  active: boolean;
+  onDrop: () => void;
+}) {
+  return (
+    <div
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDrop();
+      }}
+      className={cn(
+        "my-2 flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed text-[11px] text-muted-foreground transition-colors",
+        active ? "border-foreground/40 bg-muted text-foreground" : "border-border/60"
+      )}
+    >
+      <Pin className="size-3" aria-hidden />
+      {label}
     </div>
   );
 }

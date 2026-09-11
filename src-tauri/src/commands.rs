@@ -371,6 +371,23 @@ pub fn delete_item(app: AppHandle, workspace_id: String, item_id: String) -> App
 }
 
 #[tauri::command]
+pub fn set_pinned(
+    app: AppHandle,
+    workspace_id: String,
+    kind: String,
+    entry_id: String,
+    pinned: bool,
+) -> AppResult<()> {
+    {
+        let store = app.state::<Mutex<Store>>();
+        let mut store = store.lock().unwrap();
+        store.set_pinned(&workspace_id, &kind, &entry_id, pinned)?;
+    }
+    items_changed(&app, &workspace_id);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn search(app: AppHandle, workspace_id: String, query: String) -> AppResult<Vec<SearchHit>> {
     let store = app.state::<Mutex<Store>>();
     let store = store.lock().unwrap();
@@ -557,6 +574,16 @@ pub fn update_settings(app: AppHandle, patch: SettingsPatch) -> AppResult<Settin
                 return Err(AppError::Invalid(
                     "note preview lines must be between 0 and 6".into(),
                 ));
+            }
+        }
+        if let Some(v) = patch.pin_control_style {
+            if matches!(
+                v.as_str(),
+                "hover-toolbar" | "metadata" | "leading" | "bottom-bar" | "drag"
+            ) {
+                s.pin_control_style = v;
+            } else {
+                return Err(AppError::Invalid("invalid pin control style".into()));
             }
         }
         let settings = s.clone();

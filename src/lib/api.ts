@@ -44,10 +44,17 @@ export const api = {
       content?: string;
       title?: string | null;
       url?: string | null;
+      pinned?: boolean;
     }
   ) => invoke<Item>("update_item", { workspaceId, itemId, patch }),
   deleteItem: (workspaceId: string, itemId: string) =>
     invoke<void>("delete_item", { workspaceId, itemId }),
+  setPinned: (
+    workspaceId: string,
+    kind: "text" | "voice",
+    entryId: string,
+    pinned: boolean
+  ) => invoke<void>("set_pinned", { workspaceId, kind, entryId, pinned }),
 
   search: (workspaceId: string, query: string) =>
     invoke<SearchHit[]>("search", { workspaceId, query }),

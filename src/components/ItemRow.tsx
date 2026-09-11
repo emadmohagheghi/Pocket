@@ -20,15 +20,26 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
+import { PinButton } from "@/components/PinButton";
 import type { Item } from "@/types";
 
 interface Props {
   item: Item;
   focused: boolean;
+  onEntryDragStart?: (event: React.DragEvent, id: string, pinned: boolean) => void;
 }
 
-export function ItemRow({ item, focused }: Props) {
-  const { updateItem, deleteItem, settings } = usePocket();
+export function ItemRow({ item, focused, onEntryDragStart }: Props) {
+  const {
+    updateItem,
+    deleteItem,
+    setEntryPinned,
+    settings,
+    selectedEntry,
+    selectEntry,
+    editRequest,
+    clearEditRequest,
+  } = usePocket();
   const [isExpandable, setIsExpandable] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -37,6 +48,8 @@ export function ItemRow({ item, focused }: Props) {
   const previewRef = useRef<HTMLParagraphElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
   const previewLineLimit = settings?.notePreviewLines ?? 5;
+  const pinStyle = settings?.pinControlStyle ?? "hover-toolbar";
+  const selected = selectedEntry?.kind === "text" && selectedEntry.id === item.id;
   const collapseEnabled = previewLineLimit > 0;
   const canCollapse = collapseEnabled && isExpandable;
   const previewStyle = collapseEnabled
@@ -60,6 +73,13 @@ export function ItemRow({ item, focused }: Props) {
       });
     }
   }, [editing, item.content]);
+
+  useEffect(() => {
+    if (editRequest?.kind !== "text" || editRequest.id !== item.id) return;
+    if (canCollapse) setExpanded(true);
+    setEditing(true);
+    clearEditRequest();
+  }, [canCollapse, clearEditRequest, editRequest, item.id]);
 
   useLayoutEffect(() => {
     if (!collapseEnabled) {
@@ -127,6 +147,8 @@ export function ItemRow({ item, focused }: Props) {
     setEditing(false);
   };
 
+  const togglePin = () => void setEntryPinned("text", item.id, !item.pinned);
+
   const onKeyDownRow = (e: React.KeyboardEvent) => {
     if (
       editing ||
@@ -139,6 +161,9 @@ export function ItemRow({ item, focused }: Props) {
       e.preventDefault();
       if (canCollapse) setExpanded(true);
       setEditing(true);
+    } else if (e.key.toLowerCase() === "p" && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      togglePin();
     } else if (e.key === "Enter" && canCollapse) {
       e.preventDefault();
       setExpanded((current) => !current);
@@ -163,13 +188,50 @@ export function ItemRow({ item, focused }: Props) {
       role="listitem"
       tabIndex={0}
       aria-expanded={canCollapse ? expanded : undefined}
-      data-tauri-drag-region="deep"
+      data-tauri-drag-region={pinStyle === "drag" ? undefined : "deep"}
       data-item-id={item.id}
+      draggable={pinStyle === "drag"}
+      onDragStart={(event) => onEntryDragStart?.(event, item.id, item.pinned)}
+      onClick={(event) => {
+        if (
+          pinStyle === "bottom-bar" &&
+          !(event.target as HTMLElement).closest("button, textarea, input, a")
+        ) {
+          selectEntry(selected ? null : { id: item.id, kind: "text" });
+        }
+      }}
       onKeyDown={onKeyDownRow}
-      className="group flex items-start gap-3 px-1 py-3 focus-visible:outline-2 focus-visible:outline-ring"
+      className={cn(
+        "group flex items-start gap-3 px-1 py-3 focus-visible:outline-2 focus-visible:outline-ring",
+        selected && "rounded-lg bg-muted/60",
+        pinStyle === "drag" && "cursor-grab active:cursor-grabbing"
+      )}
     >
-      <div className="flex size-8 shrink-0 items-center justify-center">
-        <SquarePen className="size-4 text-muted-foreground/60" aria-hidden />
+      <div className="relative flex size-8 shrink-0 items-center justify-center">
+        {pinStyle === "leading" ? (
+          <>
+            <SquarePen
+              className={cn(
+                "size-4 text-muted-foreground/60 transition-opacity",
+                item.pinned && "opacity-0",
+                !item.pinned &&
+                  "group-hover:opacity-0 group-focus-within:opacity-0"
+              )}
+              aria-hidden
+            />
+            <PinButton
+              pinned={item.pinned}
+              onToggle={togglePin}
+              className={cn(
+                "absolute",
+                !item.pinned &&
+                  "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+              )}
+            />
+          </>
+        ) : (
+          <SquarePen className="size-4 text-muted-foreground/60" aria-hidden />
+        )}
       </div>
       <div className="min-w-0 flex-1">
         {canCollapse ? (
@@ -226,6 +288,9 @@ export function ItemRow({ item, focused }: Props) {
               <p className="text-[11px] text-muted-foreground/70">
                 {formatRelative(item.createdAt)}
               </p>
+              {pinStyle === "metadata" ? (
+                <PinButton pinned={item.pinned} onToggle={togglePin} />
+              ) : null}
               <CollapsibleTrigger asChild>
                 <Button
                   type="button"
@@ -274,28 +339,66 @@ export function ItemRow({ item, focused }: Props) {
           </p>
         )}
         {!canCollapse ? (
-          <p className="mt-1 text-[11px] text-muted-foreground/70">
-            {formatRelative(item.createdAt)}
-          </p>
+          <div className="mt-1 flex items-center gap-1.5">
+            <p className="text-[11px] text-muted-foreground/70">
+              {formatRelative(item.createdAt)}
+            </p>
+            {pinStyle === "metadata" ? (
+              <PinButton pinned={item.pinned} onToggle={togglePin} />
+            ) : null}
+          </div>
+        ) : null}
+
+        {pinStyle === "hover-toolbar" ? (
+          <div className="mt-1 flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            <PinButton pinned={item.pinned} onToggle={togglePin} />
+            {isLink ? (
+              <RowButton
+                label="Open in browser"
+                icon={<ExternalLink />}
+                onClick={() => void api.openUrl(linkTarget).catch(() => {})}
+              />
+            ) : null}
+            <RowButton label="Copy" icon={<Copy />} onClick={() => void copy()} />
+            <RowButton
+              label="Edit"
+              icon={<Pencil />}
+              onClick={() => {
+                if (canCollapse) setExpanded(true);
+                setEditing(true);
+              }}
+            />
+            <RowButton
+              label="Delete"
+              icon={<Trash2 />}
+              destructive
+              onClick={() => void deleteItem(item.id)}
+            />
+          </div>
         ) : null}
       </div>
 
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
+      <div
+        className={cn(
+          "flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100",
+          pinStyle === "hover-toolbar" && "hidden"
+        )}
+      >
         {isLink ? (
           <RowButton
             label="Open in browser"
-            icon={<ExternalLink className="size-3.5" />}
+            icon={<ExternalLink />}
             onClick={() => void api.openUrl(linkTarget).catch(() => {})}
           />
         ) : null}
         <RowButton
           label="Copy"
-          icon={<Copy className="size-3.5" />}
+          icon={<Copy />}
           onClick={() => void copy()}
         />
         <RowButton
           label="Edit"
-          icon={<Pencil className="size-3.5" />}
+          icon={<Pencil />}
           onClick={() => {
             if (canCollapse) setExpanded(true);
             setEditing(true);
@@ -303,7 +406,7 @@ export function ItemRow({ item, focused }: Props) {
         />
         <RowButton
           label="Delete"
-          icon={<Trash2 className="size-3.5" />}
+          icon={<Trash2 />}
           destructive
           onClick={() => void deleteItem(item.id)}
         />
@@ -327,13 +430,13 @@ function RowButton({
 }) {
   return (
     <Button
-      size="icon"
+      size="icon-sm"
       variant="ghost"
       title={label}
       aria-label={label}
       disabled={disabled}
       className={cn(
-        "size-7 text-muted-foreground hover:text-foreground",
+        "text-muted-foreground hover:text-foreground",
         destructive && "hover:text-destructive"
       )}
       onClick={onClick}

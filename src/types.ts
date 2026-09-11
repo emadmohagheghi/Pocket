@@ -1,4 +1,11 @@
 export type ItemType = "text";
+export type EntryKind = "text" | "voice";
+export type PinControlStyle =
+  | "hover-toolbar"
+  | "metadata"
+  | "leading"
+  | "bottom-bar"
+  | "drag";
 
 export interface Item {
   id: string;
@@ -6,6 +13,7 @@ export interface Item {
   content: string;
   title: string | null;
   url: string | null;
+  pinned: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -16,6 +24,7 @@ export interface Recording {
   file: string;
   durationMs: number;
   sizeBytes: number;
+  pinned: boolean;
   createdAt: number;
 }
 
@@ -45,6 +54,8 @@ export interface Settings {
   theme: "system" | "light" | "dark";
   /** 0 shows the full note; 1–6 sets the collapsed preview height. */
   notePreviewLines: number;
+  /** Temporary comparison switch for the five candidate pin interactions. */
+  pinControlStyle: PinControlStyle;
 }
 
 export interface StorageInfo {

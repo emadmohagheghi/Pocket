@@ -17,6 +17,8 @@ pub struct Item {
     pub content: String,
     pub title: Option<String>,
     pub url: Option<String>,
+    #[serde(default)]
+    pub pinned: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -30,6 +32,8 @@ pub struct Recording {
     pub file: String,
     pub duration_ms: u64,
     pub size_bytes: u64,
+    #[serde(default)]
+    pub pinned: bool,
     pub created_at: i64,
 }
 
@@ -73,6 +77,7 @@ pub struct Settings {
     pub gaming_detection_enabled: bool,
     pub theme: String,
     pub note_preview_lines: u8,
+    pub pin_control_style: String,
 }
 
 impl Default for Settings {
@@ -84,6 +89,7 @@ impl Default for Settings {
             gaming_detection_enabled: false,
             theme: "system".into(),
             note_preview_lines: 5,
+            pin_control_style: "hover-toolbar".into(),
         }
     }
 }
@@ -96,6 +102,7 @@ pub struct SettingsPatch {
     pub gaming_detection_enabled: Option<bool>,
     pub theme: Option<String>,
     pub note_preview_lines: Option<u8>,
+    pub pin_control_style: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -113,6 +120,7 @@ pub struct ItemPatch {
     pub content: Option<String>,
     pub title: Option<Option<String>>,
     pub url: Option<Option<String>>,
+    pub pinned: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -167,7 +175,7 @@ pub struct InitialState {
 
 #[cfg(test)]
 mod tests {
-    use super::Settings;
+    use super::{Item, Recording, Settings};
 
     #[test]
     fn fresh_install_starts_with_the_main_window_visible() {
@@ -183,5 +191,21 @@ mod tests {
     fn old_settings_files_gain_the_note_preview_default() {
         let settings: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
         assert_eq!(settings.note_preview_lines, 5);
+        assert_eq!(settings.pin_control_style, "hover-toolbar");
+    }
+
+    #[test]
+    fn old_entries_are_unpinned_by_default() {
+        let item: Item = serde_json::from_str(
+            r#"{"id":"i","itemType":"text","content":"note","title":null,"url":null,"createdAt":1,"updatedAt":1}"#,
+        )
+        .unwrap();
+        let recording: Recording = serde_json::from_str(
+            r#"{"id":"r","name":"voice","file":"r.webm","durationMs":1,"sizeBytes":1,"createdAt":1}"#,
+        )
+        .unwrap();
+
+        assert!(!item.pinned);
+        assert!(!recording.pinned);
     }
 }

@@ -106,6 +106,7 @@ pub fn run() {
             commands::create_item,
             commands::update_item,
             commands::delete_item,
+            commands::set_pinned,
             commands::search,
             commands::save_recording,
             commands::rename_recording,

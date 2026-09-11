@@ -10,6 +10,7 @@ import type {
   StateChangedPayload,
   WorkspaceData,
   WorkspaceInfo,
+  EntryKind,
 } from "@/types";
 
 function errMessage(e: unknown): string {
@@ -34,6 +35,8 @@ interface PocketStore {
   data: WorkspaceData | null;
   /** Item to scroll to + highlight (from search). */
   focusItemId: string | null;
+  selectedEntry: { id: string; kind: EntryKind } | null;
+  editRequest: { id: string; kind: EntryKind; nonce: number } | null;
   gaming: boolean;
 
   /** Shared voice player: one track at a time, driven by PlayerBar. */
@@ -52,6 +55,9 @@ interface PocketStore {
 
   init: () => Promise<void>;
   setFocusItem: (id: string | null) => void;
+  selectEntry: (entry: { id: string; kind: EntryKind } | null) => void;
+  requestEdit: (id: string, kind: EntryKind) => void;
+  clearEditRequest: () => void;
   refreshItems: () => Promise<void>;
 
   createWorkspace: (name: string) => Promise<WorkspaceInfo | null>;
@@ -62,6 +68,7 @@ interface PocketStore {
   createItem: (content: string) => Promise<Item | null>;
   updateItem: (itemId: string, patch: Partial<Item>) => Promise<void>;
   deleteItem: (itemId: string) => Promise<void>;
+  setEntryPinned: (kind: EntryKind, entryId: string, pinned: boolean) => Promise<void>;
 
   renameRecording: (recordingId: string, name: string) => Promise<void>;
   deleteRecording: (recordingId: string) => Promise<void>;
@@ -82,6 +89,8 @@ export const usePocket = create<PocketStore>((set, get) => ({
   workspaces: [],
   data: null,
   focusItemId: null,
+  selectedEntry: null,
+  editRequest: null,
   gaming: false,
   player: null,
   playerPlaying: false,
@@ -138,6 +147,10 @@ export const usePocket = create<PocketStore>((set, get) => ({
   },
 
   setFocusItem: (focusItemId) => set({ focusItemId }),
+  selectEntry: (selectedEntry) => set({ selectedEntry }),
+  requestEdit: (id, kind) =>
+    set({ editRequest: { id, kind, nonce: Date.now() } }),
+  clearEditRequest: () => set({ editRequest: null }),
 
   refreshItems: async () => {
     const wsId = get().settings?.activeWorkspaceId;
@@ -219,6 +232,16 @@ export const usePocket = create<PocketStore>((set, get) => ({
     if (!wsId) return;
     try {
       await api.deleteItem(wsId, itemId);
+    } catch (e) {
+      toast.error(errMessage(e));
+    }
+  },
+
+  setEntryPinned: async (kind, entryId, pinned) => {
+    const wsId = get().settings?.activeWorkspaceId;
+    if (!wsId) return;
+    try {
+      await api.setPinned(wsId, kind, entryId, pinned);
     } catch (e) {
       toast.error(errMessage(e));
     }

@@ -31,6 +31,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -139,9 +140,11 @@ export function SettingsView() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="system">System</SelectItem>
-              <SelectItem value="light">Light</SelectItem>
-              <SelectItem value="dark">Dark</SelectItem>
+              <SelectGroup>
+                <SelectItem value="system">System</SelectItem>
+                <SelectItem value="light">Light</SelectItem>
+                <SelectItem value="dark">Dark</SelectItem>
+              </SelectGroup>
             </SelectContent>
           </Select>
         </Row>
@@ -167,6 +170,27 @@ export function SettingsView() {
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
+        </Row>
+        <Row label="Pin interaction" description="Temporary comparison mode">
+          <Select
+            value={settings.pinControlStyle}
+            onValueChange={(value) =>
+              void setSettings({ pinControlStyle: value as typeof settings.pinControlStyle })
+            }
+          >
+            <SelectTrigger className="w-40" aria-label="Pin interaction style">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="hover-toolbar">Hover toolbar</SelectItem>
+                <SelectItem value="metadata">Beside timestamp</SelectItem>
+                <SelectItem value="leading">Leading icon</SelectItem>
+                <SelectItem value="bottom-bar">Bottom action bar</SelectItem>
+                <SelectItem value="drag">Drag to pin</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </Row>
         <Row label="Gaming mode" description="Temporarily unavailable">
           <Switch

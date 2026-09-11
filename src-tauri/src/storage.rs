@@ -538,6 +538,7 @@ impl Store {
                 .map(|t| t.trim().to_string())
                 .filter(|t| !t.is_empty()),
             url,
+            pinned: false,
             created_at: now_ms(),
             updated_at: now_ms(),
         };
@@ -566,6 +567,9 @@ impl Store {
         }
         if let Some(u) = patch.url {
             item.url = u.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        }
+        if let Some(pinned) = patch.pinned {
+            item.pinned = pinned;
         }
         item.updated_at = now_ms();
         let item = item.clone();
@@ -627,6 +631,7 @@ impl Store {
             file,
             duration_ms,
             size_bytes: data_bytes.len() as u64,
+            pinned: false,
             created_at: now_ms(),
         };
         let data = self.workspace_data_mut(ws_id)?;
@@ -651,6 +656,38 @@ impl Store {
         let rec = rec.clone();
         self.persist_workspace(ws_id);
         Ok(rec)
+    }
+
+    pub fn set_pinned(
+        &mut self,
+        ws_id: &str,
+        kind: &str,
+        entry_id: &str,
+        pinned: bool,
+    ) -> AppResult<()> {
+        let data = self.workspace_data_mut(ws_id)?;
+        match kind {
+            "text" => {
+                let item = data
+                    .items
+                    .iter_mut()
+                    .find(|item| item.id == entry_id)
+                    .ok_or(AppError::ItemNotFound)?;
+                item.pinned = pinned;
+                item.updated_at = now_ms();
+            }
+            "voice" => {
+                let recording = data
+                    .recordings
+                    .iter_mut()
+                    .find(|recording| recording.id == entry_id)
+                    .ok_or(AppError::RecordingNotFound)?;
+                recording.pinned = pinned;
+            }
+            _ => return Err(AppError::Invalid("entry kind must be text or voice".into())),
+        }
+        self.persist_workspace(ws_id);
+        Ok(())
     }
 
     pub fn delete_recording(&mut self, ws_id: &str, rec_id: &str) -> AppResult<()> {
