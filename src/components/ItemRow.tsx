@@ -26,10 +26,14 @@ import type { Item } from "@/types";
 interface Props {
   item: Item;
   focused: boolean;
-  onEntryDragStart?: (event: React.DragEvent, id: string, pinned: boolean) => void;
+  onEntryPointerDown?: (
+    event: React.PointerEvent,
+    id: string,
+    pinned: boolean
+  ) => void;
 }
 
-export function ItemRow({ item, focused, onEntryDragStart }: Props) {
+export function ItemRow({ item, focused, onEntryPointerDown }: Props) {
   const {
     updateItem,
     deleteItem,
@@ -190,8 +194,9 @@ export function ItemRow({ item, focused, onEntryDragStart }: Props) {
       aria-expanded={canCollapse ? expanded : undefined}
       data-tauri-drag-region={pinStyle === "drag" ? undefined : "deep"}
       data-item-id={item.id}
-      draggable={pinStyle === "drag"}
-      onDragStart={(event) => onEntryDragStart?.(event, item.id, item.pinned)}
+      onPointerDown={(event) =>
+        pinStyle === "drag" && onEntryPointerDown?.(event, item.id, item.pinned)
+      }
       onClick={(event) => {
         if (
           pinStyle === "bottom-bar" &&
@@ -204,7 +209,7 @@ export function ItemRow({ item, focused, onEntryDragStart }: Props) {
       className={cn(
         "group flex items-start gap-3 px-1 py-3 focus-visible:outline-2 focus-visible:outline-ring",
         selected && "rounded-lg bg-muted/60",
-        pinStyle === "drag" && "cursor-grab active:cursor-grabbing"
+        pinStyle === "drag" && "cursor-grab select-none active:cursor-grabbing"
       )}
     >
       <div className="relative flex size-8 shrink-0 items-center justify-center">

@@ -59,11 +59,15 @@ export function VoiceList() {
 export function VoiceRow({
   recording,
   focused,
-  onEntryDragStart,
+  onEntryPointerDown,
 }: {
   recording: Recording;
   focused?: boolean;
-  onEntryDragStart?: (event: React.DragEvent, id: string, pinned: boolean) => void;
+  onEntryPointerDown?: (
+    event: React.PointerEvent,
+    id: string,
+    pinned: boolean
+  ) => void;
 }) {
   const {
     deleteRecording,
@@ -129,8 +133,10 @@ export function VoiceRow({
       role="listitem"
       tabIndex={0}
       data-tauri-drag-region={pinStyle === "drag" ? undefined : "deep"}
-      draggable={pinStyle === "drag"}
-      onDragStart={(event) => onEntryDragStart?.(event, recording.id, recording.pinned)}
+      onPointerDown={(event) =>
+        pinStyle === "drag" &&
+        onEntryPointerDown?.(event, recording.id, recording.pinned)
+      }
       onClick={(event) => {
         if (
           pinStyle === "bottom-bar" &&
@@ -156,7 +162,7 @@ export function VoiceRow({
       className={cn(
         "group flex items-center gap-3 px-1 py-3 focus-visible:outline-2 focus-visible:outline-ring",
         selected && "rounded-lg bg-muted/60",
-        pinStyle === "drag" && "cursor-grab active:cursor-grabbing"
+        pinStyle === "drag" && "cursor-grab select-none active:cursor-grabbing"
       )}
     >
       <div className="relative size-8 shrink-0">

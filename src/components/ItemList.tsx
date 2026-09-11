@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from "react";
+import { forwardRef, useId, useMemo, useRef, useState } from "react";
 import { Mic, Pin, Plus, Square } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,11 +40,14 @@ const CAPTURE_BAR_CLASS =
 export function ItemList() {
   const { data, focusItemId, settings, setEntryPinned } = usePocket();
   const listRef = useRef<HTMLDivElement>(null);
+  const pinDropRef = useRef<HTMLDivElement>(null);
+  const unpinDropRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<{
     id: string;
     kind: EntryKind;
     pinned: boolean;
   } | null>(null);
+  const [dragTarget, setDragTarget] = useState<boolean | null>(null);
 
   const items = useMemo<Item[]>(() => data?.items ?? [], [data]);
 
@@ -93,22 +96,87 @@ export function ItemList() {
 
   const dragMode = settings?.pinControlStyle === "drag";
 
-  const startDrag = (
-    event: React.DragEvent,
+  const startPointerDrag = (
+    event: React.PointerEvent,
     kind: EntryKind,
     id: string,
     pinned: boolean
   ) => {
-    event.stopPropagation();
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", `${kind}:${id}`);
-    setDragging({ kind, id, pinned });
-  };
+    if (
+      event.button !== 0 ||
+      (event.target as HTMLElement).closest("button, textarea, input, a")
+    ) {
+      return;
+    }
 
-  const dropAs = (pinned: boolean) => {
-    if (!dragging || dragging.pinned === pinned) return;
-    void setEntryPinned(dragging.kind, dragging.id, pinned);
-    setDragging(null);
+    const source = { kind, id, pinned };
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const pointerId = event.pointerId;
+    const captureElement = event.currentTarget as HTMLElement;
+    let activated = false;
+    captureElement.setPointerCapture(pointerId);
+
+    const targetAt = (clientX: number, clientY: number): boolean | null => {
+      const contains = (element: HTMLDivElement | null) => {
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        return (
+          clientX >= rect.left &&
+          clientX <= rect.right &&
+          clientY >= rect.top &&
+          clientY <= rect.bottom
+        );
+      };
+      if (contains(pinDropRef.current)) return true;
+      if (contains(unpinDropRef.current)) return false;
+      return null;
+    };
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      if (captureElement.hasPointerCapture(pointerId)) {
+        captureElement.releasePointerCapture(pointerId);
+      }
+      setDragging(null);
+      setDragTarget(null);
+    };
+
+    const onMove = (pointerEvent: PointerEvent) => {
+      if (!activated) {
+        const distance = Math.hypot(
+          pointerEvent.clientX - startX,
+          pointerEvent.clientY - startY
+        );
+        if (distance < 6) return;
+        activated = true;
+        setDragging(source);
+        document.body.style.cursor = "grabbing";
+        document.body.style.userSelect = "none";
+      }
+      pointerEvent.preventDefault();
+      setDragTarget(targetAt(pointerEvent.clientX, pointerEvent.clientY));
+    };
+
+    const onUp = (pointerEvent: PointerEvent) => {
+      if (activated) {
+        const target = targetAt(pointerEvent.clientX, pointerEvent.clientY);
+        if (target !== null && target !== source.pinned) {
+          void setEntryPinned(source.kind, source.id, target);
+        }
+      }
+      cleanup();
+    };
+
+    const onCancel = () => cleanup();
+
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
   };
 
   const renderEntry = (entry: FeedEntry) =>
@@ -117,8 +185,8 @@ export function ItemList() {
         key={entry.key}
         item={entry.item}
         focused={entry.item.id === focusItemId}
-        onEntryDragStart={(event, id, pinned) =>
-          startDrag(event, "text", id, pinned)
+        onEntryPointerDown={(event, id, pinned) =>
+          startPointerDrag(event, "text", id, pinned)
         }
       />
     ) : (
@@ -126,8 +194,8 @@ export function ItemList() {
         key={entry.key}
         recording={entry.recording}
         focused={entry.recording.id === focusItemId}
-        onEntryDragStart={(event, id, pinned) =>
-          startDrag(event, "voice", id, pinned)
+        onEntryPointerDown={(event, id, pinned) =>
+          startPointerDrag(event, "voice", id, pinned)
         }
       />
     );
@@ -137,13 +205,12 @@ export function ItemList() {
       ref={listRef}
       className="px-1 pt-1"
       role="list"
-      onDragEnd={() => setDragging(null)}
     >
       {dragMode ? (
         <PinDropZone
+          ref={pinDropRef}
           label="Drag here to pin"
-          active={Boolean(dragging && !dragging.pinned)}
-          onDrop={() => dropAs(true)}
+          active={Boolean(dragging && !dragging.pinned && dragTarget === true)}
         />
       ) : null}
 
@@ -158,9 +225,9 @@ export function ItemList() {
 
       {dragMode && pinnedEntries.length > 0 ? (
         <PinDropZone
+          ref={unpinDropRef}
           label="Drag here to unpin"
-          active={Boolean(dragging?.pinned)}
-          onDrop={() => dropAs(false)}
+          active={Boolean(dragging?.pinned && dragTarget === false)}
         />
       ) : null}
 
@@ -176,25 +243,14 @@ export function ItemList() {
   );
 }
 
-function PinDropZone({
-  label,
-  active,
-  onDrop,
-}: {
-  label: string;
-  active: boolean;
-  onDrop: () => void;
-}) {
+const PinDropZone = forwardRef<
+  HTMLDivElement,
+  { label: string; active: boolean }
+>(function PinDropZone({ label, active }, ref) {
   return (
     <div
-      onDragOver={(event) => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        onDrop();
-      }}
+      ref={ref}
+      data-tauri-drag-region="false"
       className={cn(
         "my-2 flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed text-[11px] text-muted-foreground transition-colors",
         active ? "border-foreground/40 bg-muted text-foreground" : "border-border/60"
@@ -204,7 +260,7 @@ function PinDropZone({
       {label}
     </div>
   );
-}
+});
 
 /** Pinned bottom capture bar (rendered outside the scroll flow). */
 export function AddBar() {
