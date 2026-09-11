@@ -33,6 +33,9 @@ type FeedEntry =
   | { key: string; createdAt: number; kind: "text"; item: Item }
   | { key: string; createdAt: number; kind: "voice"; recording: Recording };
 
+const CAPTURE_BAR_CLASS =
+  "flex items-center gap-2.5 rounded-full border border-border/60 bg-muted/50 px-3.5 py-2 transition-colors focus-within:border-border";
+
 /** Single unified feed: text items and voice recordings together, newest first. */
 export function ItemList() {
   const { data, focusItemId } = usePocket();
@@ -154,78 +157,73 @@ export function AddBar() {
         void save();
       }}
     >
-      <label
-        htmlFor={voiceActive ? undefined : inputId}
-        className="flex items-center gap-2.5 rounded-full border border-border/60 bg-muted/50 px-3.5 py-2 transition-colors focus-within:border-border"
-      >
-        {voiceActive ? (
-          <>
-            <span
-              className={
-                "size-2 shrink-0 rounded-full bg-red-500" +
-                (recorder.recording ? " animate-pulse" : "")
-              }
-              aria-hidden
+      {voiceActive ? (
+        <div className={CAPTURE_BAR_CLASS}>
+          <span
+            className={
+              "size-2 shrink-0 rounded-full bg-red-500" +
+              (recorder.recording ? " animate-pulse" : "")
+            }
+            aria-hidden
+          />
+          <span
+            className="min-w-0 flex-1 whitespace-nowrap text-[13px] font-medium"
+            aria-live="polite"
+          >
+            {savingVoice ? "Saving…" : "Recording…"}
+          </span>
+          <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+            {formatDuration(recorder.elapsedMs)}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 shrink-0 px-2.5 text-xs"
+            disabled={savingVoice}
+            onClick={() => recorder.cancel()}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="h-7 shrink-0 gap-1.5 bg-red-500 px-2.5 text-xs text-white hover:bg-red-600"
+            disabled={savingVoice}
+            onClick={() => void stopAndSaveVoice()}
+          >
+            <Square className="size-3 fill-current" /> Save
+          </Button>
+        </div>
+      ) : (
+        <label htmlFor={inputId} className={CAPTURE_BAR_CLASS}>
+          <Plus className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <div className="relative min-w-0 flex-1">
+            <Input
+              id={inputId}
+              value={value}
+              type="text"
+              autoComplete="off"
+              onChange={(event) => setValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setValue("");
+              }}
+              placeholder="Add a note or a prompt…"
+              aria-label="Add a text item"
+              className="relative h-auto rounded-none border-0 !bg-transparent p-0 text-sm shadow-none focus-visible:border-0 focus-visible:ring-0"
             />
-            <span
-              className="min-w-0 flex-1 whitespace-nowrap text-[13px] font-medium"
-              aria-live="polite"
-            >
-              {savingVoice ? "Saving…" : "Recording…"}
-            </span>
-            <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-              {formatDuration(recorder.elapsedMs)}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 shrink-0 px-2.5 text-xs"
-              disabled={savingVoice}
-              onClick={() => recorder.cancel()}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 shrink-0 gap-1.5 bg-red-500 px-2.5 text-xs text-white hover:bg-red-600"
-              disabled={savingVoice}
-              onClick={() => void stopAndSaveVoice()}
-            >
-              <Square className="size-3 fill-current" /> Save
-            </Button>
-          </>
-        ) : (
-          <>
-            <Plus className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <div className="relative min-w-0 flex-1">
-              <Input
-                id={inputId}
-                value={value}
-                type="text"
-                autoComplete="off"
-                onChange={(event) => setValue(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") setValue("");
-                }}
-                placeholder="Add a note or a prompt…"
-                aria-label="Add a text item"
-                className="relative h-auto border-0 !bg-transparent p-0 text-sm shadow-none focus-visible:border-0 focus-visible:ring-0 rounded-none"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => void recorder.start()}
-              aria-label="Record a voice note"
-              title="Record a voice note"
-              className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            >
-              <Mic className="size-4" />
-            </button>
-          </>
-        )}
-      </label>
+          </div>
+          <button
+            type="button"
+            onClick={() => void recorder.start()}
+            aria-label="Record a voice note"
+            title="Record a voice note"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <Mic className="size-4" />
+          </button>
+        </label>
+      )}
       {recorder.error && (
         <p className="mt-1 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
           {recorder.error}
