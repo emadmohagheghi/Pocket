@@ -2,6 +2,16 @@
   "name": "pocket",
   "private": true,
   "version": "0.1.1",
+  "description": "A lightweight, privacy-first Windows companion for capturing text and voice notes.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/emadmohagheghi/Pocket.git"
+  },
+  "homepage": "https://github.com/emadmohagheghi/Pocket#readme",
+  "bugs": {
+    "url": "https://github.com/emadmohagheghi/Pocket/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

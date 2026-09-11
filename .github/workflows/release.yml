@@ -44,7 +44,13 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: "Pocket v__VERSION__"
-          releaseBody: "Installers for Pocket v__VERSION__. Pick the file for your OS."
+          releaseBody: |
+            Windows x64 installers for Pocket v__VERSION__.
+
+            The NSIS `-setup.exe` installs for the current user. The `.msi` may require administrator access.
+
+            Code signing status and release guarantees: https://github.com/emadmohagheghi/Pocket/blob/master/CODE_SIGNING_POLICY.md
+            Privacy policy: https://github.com/emadmohagheghi/Pocket/blob/master/PRIVACY.md
           releaseDraft: false
           prerelease: false
 

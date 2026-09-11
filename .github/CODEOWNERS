@@ -1,0 +1,8 @@
+# Release and trust-chain changes require maintainer review.
+/.github/workflows/ @emadmohagheghi
+/.signpath/ @emadmohagheghi
+/CODE_SIGNING_POLICY.md @emadmohagheghi
+/PRIVACY.md @emadmohagheghi
+/SECURITY.md @emadmohagheghi
+/src-tauri/ @emadmohagheghi
+

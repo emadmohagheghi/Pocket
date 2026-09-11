@@ -1,68 +1,117 @@
 # Pocket
 
-A lightweight, privacy-first desktop companion for people who work with AI tools.
-Capture plain text and voice notes from anywhere — without
-leaving your workflow. Any text that happens to be a URL is rendered as a
-clickable link automatically.
+Pocket is a lightweight, privacy-first Windows companion for capturing selected
+text and voice notes without leaving your current workflow.
 
-Built with **Rust + Tauri v2 + React + TypeScript + shadcn/ui + Tailwind CSS**.
+It is built with Rust, Tauri v2, React, TypeScript, shadcn/ui, and Tailwind CSS.
+Pocket is currently in early development and its release builds target Windows
+x64.
 
-## Highlights
+## Features
 
-- **Quick capture everywhere** — press **Shift twice** (default, configurable) or
-  `Ctrl+N` to open a compact capture bar. Type, hit Enter, done.
-- **Workspaces** — every text item and recording belongs to the
-  active workspace. Switch context with one click.
-- **Text** — a single unified type for everything you capture. Just plain text;
-  URLs stay clickable.
-- **Voice notes** — record from the capture bar or tray. Audio (opus/webm) is
-  stored locally and never uploaded anywhere.
-- **System tray** — Pocket lives in the tray: quick capture, voice recording,
-  workspace switching, settings, quit.
-- **Gaming mode** — a Rust-side detector watches the foreground window; when a
-  fullscreen/borderless game is detected, **all global shortcuts are disabled**
-  until you leave the game.
-- **Local-first storage** — no account, no cloud, no telemetry. Data lives in a
-  `PocketData` folder next to the executable (falls back to the per-user app
-  config directory when the install folder is not writable). All writes are
-  atomic (temp file + rename).
+- Capture selected text from any application with a double press of Left Shift.
+- Record voice notes from the main window, quick-capture panel, or system tray.
+- Use Right Shift as push-to-record: double press, hold to record, and release to
+  save.
+- Organize text and recordings into independent workspaces.
+- Search the active workspace as you type.
+- Pin important text and voice notes.
+- Export and import complete backup archives, including audio files.
+- Keep all application data local, with no account, cloud service, telemetry, or
+  advertising.
 
-## Keyboard shortcuts
+## Privacy-sensitive behavior
 
-| Action | Default |
+Pocket uses a Windows low-level keyboard hook to recognize the Left Shift and
+Right Shift capture gestures. Key contents are not logged, stored, or sent over
+the network. The hook only keeps the timing and side of Shift presses and
+whether another key interrupted the gesture.
+
+When the Left Shift text-capture gesture is used, Pocket temporarily uses the
+Windows clipboard to copy the text currently selected in the foreground
+application. This action replaces the clipboard's previous contents. The
+captured text is saved locally only when the selection is non-empty.
+
+Microphone access is used only for a recording explicitly started by the user.
+Voice recordings remain on the local machine unless the user chooses to export
+a backup.
+
+See the full [Privacy Policy](PRIVACY.md) and [Security Policy](SECURITY.md).
+
+## Keyboard controls
+
+| Action | Default control |
 | --- | --- |
-| Quick capture (global) | Double Shift |
-| Quick capture (in main window) | `Ctrl+N` |
-| Search workspace | `Ctrl+K` |
-| Save capture | `Enter` |
-| Newline in capture | `Shift+Enter` |
-| Switch capture mode (Text / Voice) | `Alt+1` / `Alt+2` |
-| Close capture | `Esc` |
-| Copy focused item | `C` |
-| Edit focused item | `E` |
-| Delete focused item | `Del` |
+| Capture selected text | Double press Left Shift |
+| Open voice capture | Double press Left Shift and hold the second press |
+| Push-to-record voice | Double press Right Shift, hold, then release to save |
+| Open quick capture from the main window | `Ctrl+N` |
+| Focus search | `Ctrl+K` |
+| Save quick capture | `Enter` |
+| Add a newline in quick capture | `Shift+Enter` |
+| Switch quick capture to text / voice | `Alt+1` / `Alt+2` |
+| Close quick capture | `Esc` |
+| Copy / edit / pin a focused item | `C` / `E` / `P` |
+| Delete a focused item | `Delete` or `Backspace` |
 
-All shortcuts are configurable in Settings → Shortcuts.
+## Installation
+
+Official Windows installers are published on the GitHub Releases page. Pocket
+currently produces an NSIS `.exe` installer for the current user and an `.msi`
+installer that may require administrator access.
+
+Release artifacts are currently unsigned while the project prepares its
+application to SignPath Foundation. Windows SmartScreen may therefore display
+an unknown-publisher warning. Never download Pocket installers from an
+unofficial source.
+
+## Local data
+
+Pocket first attempts to create a `PocketData` directory next to the executable.
+If that location is not writable, it uses the per-user application configuration
+directory instead. The exact active location is shown in Settings.
+
+```text
+PocketData/
+  settings.json
+  workspaces.json
+  workspaces/<id>/workspace.json
+  voices/<id>/<recording>.webm
+```
+
+Writes to Pocket's JSON data files are atomic. Voice playback uses a restricted
+local protocol that only exposes recordings registered in workspace metadata.
 
 ## Development
 
-```bash
+Requirements:
+
+- Windows 10 or Windows 11 x64
+- Node.js and npm
+- Rust stable with the MSVC toolchain
+- Microsoft Edge WebView2 Runtime
+
+```powershell
 npm install
-npm run tauri dev     # run the app in development
-npm run tauri build   # produce release bundles
-cargo test            # Rust unit tests (in src-tauri)
+npm run tauri dev
+npm run build
+cargo test --manifest-path src-tauri/Cargo.toml
+npm run tauri build
 ```
 
-## Data layout
+See [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change.
 
-```
-PocketData/
-  settings.json                  # app settings
-  workspaces.json                # workspace index
-  workspaces/<id>/workspace.json # items + recordings metadata
-  voices/<id>/<recording>.webm   # voice recordings
-```
+## Code signing policy
 
-Voice playback is served through a sandboxed `voice://` protocol that only ever
-exposes files registered in a workspace's metadata — no arbitrary filesystem
-access from the webview.
+Pocket is preparing to use SignPath Foundation for verifiable Windows release
+signing. The complete policy, maintainer roles, and release guarantees are in
+[CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
+
+Free code signing provided by SignPath.io, certificate by SignPath Foundation.
+
+Until the SignPath application is approved and the release workflow is updated,
+official artifacts must be treated as unsigned.
+
+## License
+
+Pocket is licensed under the [MIT License](LICENSE).

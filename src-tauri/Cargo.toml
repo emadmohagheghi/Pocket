@@ -2,6 +2,11 @@
 name = "pocket"
 version = "0.1.1"
 edition = "2021"
+authors = ["Pocket contributors"]
+description = "A lightweight, privacy-first Windows companion for capturing text and voice notes."
+license = "MIT"
+repository = "https://github.com/emadmohagheghi/Pocket"
+homepage = "https://github.com/emadmohagheghi/Pocket"
 
 [lib]
 name = "pocket_lib"
