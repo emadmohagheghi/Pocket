@@ -104,12 +104,11 @@ export function ItemList() {
 
 /** Pinned bottom capture bar (rendered outside the scroll flow). */
 export function AddBar() {
-  const { createItem, settings, workspaces } = usePocket();
+  const { createItem, settings } = usePocket();
   const [value, setValue] = useState("");
   const [savingVoice, setSavingVoice] = useState(false);
   const inputId = useId();
   const recorder = useRecorder();
-  const activeWs = workspaces.find((w) => w.id === settings?.activeWorkspaceId);
   const voiceActive = recorder.recording || savingVoice;
 
   const save = async () => {
@@ -158,11 +157,6 @@ export function AddBar() {
       <label
         htmlFor={voiceActive ? undefined : inputId}
         className="flex items-center gap-2.5 rounded-full border border-border/60 bg-muted/50 px-3.5 py-2 transition-colors focus-within:border-border"
-        onClick={(event) => {
-          if (!recorder.recording) return;
-          const target = event.target as HTMLElement;
-          if (!target.closest("[data-recording-save]")) recorder.cancel();
-        }}
       >
         {voiceActive ? (
           <>
@@ -173,12 +167,11 @@ export function AddBar() {
               }
               aria-hidden
             />
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-              {savingVoice ? "Saving voice note…" : "Recording…"}
-              <span className="font-normal text-muted-foreground">
-                {" "}
-                → {activeWs?.name ?? "…"}
-              </span>
+            <span
+              className="min-w-0 flex-1 whitespace-nowrap text-[13px] font-medium"
+              aria-live="polite"
+            >
+              {savingVoice ? "Saving…" : "Recording…"}
             </span>
             <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
               {formatDuration(recorder.elapsedMs)}
@@ -196,7 +189,6 @@ export function AddBar() {
             <Button
               type="button"
               size="sm"
-              data-recording-save
               className="h-7 shrink-0 gap-1.5 bg-red-500 px-2.5 text-xs text-white hover:bg-red-600"
               disabled={savingVoice}
               onClick={() => void stopAndSaveVoice()}
