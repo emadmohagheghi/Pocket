@@ -45,7 +45,13 @@ pub fn run() {
             let (data_dir, fallback) = resolve_data_dir(&handle);
             eprintln!("[pocket] data directory: {}", data_dir.display());
             let store = Store::load(data_dir, fallback);
+            let start_minimized = store.settings.start_minimized;
             app.manage(Mutex::new(store));
+
+            // The frontend normally reveals the initialized window. Keep a
+            // backend fail-safe so a missed ready event cannot strand a normal
+            // launch in the tray forever.
+            commands::schedule_startup_reveal(handle.clone(), start_minimized);
 
             // Keep OS autostart in sync with the persisted preference.
             commands::apply_autostart(&handle);

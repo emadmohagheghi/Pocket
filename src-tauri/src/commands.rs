@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use std::path::PathBuf;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
@@ -57,16 +58,38 @@ fn show_main_window_now(app: &AppHandle) {
     }
 }
 
-/// Show requests can arrive before the hidden startup webview is ready (for
-/// example from the tray or the single-instance callback). Queue those instead
-/// of flashing a partially rendered window.
+/// Explicit user requests (tray click, tray menu, or launching Pocket again)
+/// must never depend on the frontend-ready handshake. Remember the request so
+/// a startup-minimized window stays visible after initialization, then reveal
+/// it immediately.
 pub fn show_main_window(app: &AppHandle) {
     let shared = app.state::<AppFlags>();
-    if !shared.frontend_ready.load(Ordering::Acquire) {
-        shared.show_requested.store(true, Ordering::Release);
+    shared.show_requested.store(true, Ordering::Release);
+    show_main_window_now(app);
+}
+
+/// The frontend normally reveals a standard launch as soon as its persisted
+/// state is ready. Fail open if that IPC handshake never arrives so a broken or
+/// unusually slow webview cannot leave Pocket permanently inaccessible in the
+/// system tray.
+pub fn schedule_startup_reveal(app: AppHandle, start_minimized: bool) {
+    if start_minimized {
         return;
     }
-    show_main_window_now(app);
+
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(3));
+        if app
+            .state::<AppFlags>()
+            .frontend_ready
+            .load(Ordering::Acquire)
+        {
+            return;
+        }
+
+        let reveal_app = app.clone();
+        let _ = app.run_on_main_thread(move || show_main_window_now(&reveal_app));
+    });
 }
 
 /// Called once the main React view has loaded its persisted state. A normal
