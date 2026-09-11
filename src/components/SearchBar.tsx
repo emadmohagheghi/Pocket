@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
 import type { SearchHit } from "@/types";
 
 interface SearchBarProps {
@@ -108,6 +109,7 @@ export function SearchBar({ inputRef }: SearchBarProps) {
             onKeyDown={onKeyDown}
           />
         </div>
+        <Kbd className="shrink-0 bg-background/70 px-1.5 text-[10px]">Ctrl + K</Kbd>
       </label>
 
       {showResults ? (

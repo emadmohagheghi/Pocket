@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Toaster } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
 
 import MainWindow from "@/windows/MainWindow";
 import QuickCaptureWindow from "@/windows/QuickCaptureWindow";
@@ -14,13 +13,13 @@ export default function App() {
   }, [label]);
 
   return (
-    <TooltipProvider>
+    <>
       {label === "quick-capture" ? <QuickCaptureWindow /> : <MainWindow />}
       <Toaster
         position={label === "quick-capture" ? "bottom-center" : "bottom-right"}
         offset={label === "quick-capture" ? 12 : 24}
         mobileOffset={label === "quick-capture" ? 12 : 24}
       />
-    </TooltipProvider>
+    </>
   );
 }

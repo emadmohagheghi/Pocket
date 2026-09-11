@@ -374,7 +374,6 @@ export function AddBar() {
             type="button"
             onClick={() => void recorder.start()}
             aria-label="Record a voice note"
-            title="Record a voice note"
             className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
           >
             <Mic className="size-4" />

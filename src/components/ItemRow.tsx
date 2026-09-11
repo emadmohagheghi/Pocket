@@ -158,22 +158,9 @@ export function ItemRow({ item, focused, onEntryPointerDown }: Props) {
       editing ||
       (e.target as HTMLElement).closest("button, textarea, input, a")
     ) return;
-    if (e.key === "c" && !e.ctrlKey && !e.metaKey) {
-      e.preventDefault();
-      void copy();
-    } else if (e.key === "e") {
-      e.preventDefault();
-      if (canCollapse) setExpanded(true);
-      setEditing(true);
-    } else if (e.key.toLowerCase() === "p" && !e.ctrlKey && !e.metaKey) {
-      e.preventDefault();
-      togglePin();
-    } else if (e.key === "Enter" && canCollapse) {
+    if (e.key === "Enter" && canCollapse) {
       e.preventDefault();
       setExpanded((current) => !current);
-    } else if (e.key === "Delete" || e.key === "Backspace") {
-      e.preventDefault();
-      void deleteItem(item.id);
     } else if (e.key === "Escape") {
       e.preventDefault();
       setExpanded(false);
@@ -437,7 +424,6 @@ function RowButton({
     <Button
       size="icon-sm"
       variant="ghost"
-      title={label}
       aria-label={label}
       disabled={disabled}
       className={cn(

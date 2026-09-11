@@ -145,20 +145,6 @@ export function VoiceRow({
           selectEntry(selected ? null : { id: recording.id, kind: "voice" });
         }
       }}
-      onKeyDown={(event) => {
-        if ((event.target as HTMLElement).closest("button, input")) return;
-        if (event.key.toLowerCase() === "p" && !event.ctrlKey && !event.metaKey) {
-          event.preventDefault();
-          togglePin();
-        } else if (event.key.toLowerCase() === "e") {
-          event.preventDefault();
-          setRenaming(true);
-        } else if (event.key === "Delete" || event.key === "Backspace") {
-          event.preventDefault();
-          if (isCurrent) stopPlayer();
-          void deleteRecording(recording.id);
-        }
-      }}
       className={cn(
         "group flex items-center gap-3 px-1 py-3 focus-visible:outline-2 focus-visible:outline-ring",
         selected && "rounded-lg bg-muted/60",
@@ -418,7 +404,6 @@ function BarButton({
     <Button
       size="icon"
       variant="ghost"
-      title={label}
       aria-label={label}
       onClick={onClick}
       className="size-8 shrink-0 text-muted-foreground hover:text-foreground"

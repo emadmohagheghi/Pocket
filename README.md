@@ -48,8 +48,6 @@ See the full [Privacy Policy](PRIVACY.md) and [Security Policy](SECURITY.md).
 | Focus search | `Ctrl+K` |
 | Save text from the main add bar | `Enter` |
 | Cancel the voice-capture panel | `Esc` |
-| Copy / edit / pin a focused item | `C` / `E` / `P` |
-| Delete a focused item | `Delete` or `Backspace` |
 
 ## Installation
 
