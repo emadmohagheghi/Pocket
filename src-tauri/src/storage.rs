@@ -89,13 +89,18 @@ impl Store {
 
         // Settings: fall back to defaults on missing/corrupt file (keep the
         // corrupt file around for recovery).
-        let settings = match fsutil::read_json::<Settings>(&data_dir.join("settings.json")) {
+        let mut settings = match fsutil::read_json::<Settings>(&data_dir.join("settings.json")) {
             Ok(s) => s,
             Err(_) => {
                 backup_corrupt(&data_dir.join("settings.json"));
                 Settings::default()
             }
         };
+        // Gaming mode is temporarily feature-gated off. Normalise existing
+        // installations as well as fresh ones so the persisted state and UI
+        // cannot suggest that the detector is active.
+        let gaming_was_enabled = settings.gaming_detection_enabled;
+        settings.gaming_detection_enabled = false;
 
         let workspaces: Vec<WorkspaceMeta> =
             match fsutil::read_json(&data_dir.join("workspaces.json")) {
@@ -129,6 +134,9 @@ impl Store {
             workspaces,
             data,
         };
+        if gaming_was_enabled {
+            store.persist_settings();
+        }
         if store.workspaces.is_empty() {
             let ws = WorkspaceMeta {
                 id: Uuid::new_v4().to_string(),

@@ -55,7 +55,12 @@ pub fn run() {
 
             // Fixed gestures: double-shift hook (text on tap, voice on hold).
             shortcuts::double_shift::spawn(handle.clone());
-            gaming::spawn(handle.clone());
+            // Gaming mode is temporarily unavailable while its detector is
+            // being stabilised. Keep the module and IPC surface intact so it
+            // can be re-enabled without a data or API migration.
+            if gaming::ENABLED {
+                gaming::spawn(handle.clone());
+            }
 
             // Voice notes use getUserMedia; WebView2 denies media permission
             // requests by default, so grant microphone access for our own

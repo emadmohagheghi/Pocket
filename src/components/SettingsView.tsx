@@ -168,12 +168,10 @@ export function SettingsView() {
             ))}
           </ToggleGroup>
         </Row>
-        <Row
-          label="Gaming mode"
-        >
+        <Row label="Gaming mode" description="Temporarily unavailable">
           <Switch
-            checked={settings.gamingDetectionEnabled}
-            onCheckedChange={(v) => void setSettings({ gamingDetectionEnabled: v })}
+            checked={false}
+            disabled
             aria-label="Gaming mode detection"
           />
         </Row>
@@ -270,15 +268,20 @@ function Section({
 
 function Row({
   label,
+  description,
   children,
 }: {
   label: string;
+  description?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-4 rounded-lg px-1 py-2.5">
       <div className="min-w-0">
         <Label className="text-[13px]">{label}</Label>
+        {description ? (
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{description}</p>
+        ) : null}
       </div>
       <div className="shrink-0">{children}</div>
     </div>

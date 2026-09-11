@@ -81,7 +81,7 @@ impl Default for Settings {
             launch_on_startup: false,
             start_minimized: false,
             active_workspace_id: String::new(),
-            gaming_detection_enabled: true,
+            gaming_detection_enabled: false,
             theme: "system".into(),
             note_preview_lines: 5,
         }

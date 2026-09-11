@@ -537,7 +537,9 @@ pub fn update_settings(app: AppHandle, patch: SettingsPatch) -> AppResult<Settin
             s.start_minimized = v;
         }
         if let Some(v) = patch.gaming_detection_enabled {
-            s.gaming_detection_enabled = v;
+            // Keep accepting the field for API compatibility, but do not let
+            // clients enable the feature while its runtime gate is disabled.
+            s.gaming_detection_enabled = v && crate::gaming::ENABLED;
         }
         if let Some(v) = patch.theme {
             if matches!(v.as_str(), "system" | "light" | "dark") {

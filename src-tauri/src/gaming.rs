@@ -13,6 +13,10 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::shortcuts::AppFlags;
 
+/// Temporary feature gate. The implementation remains compiled and ready to
+/// re-enable after the detector issues have been resolved.
+pub const ENABLED: bool = false;
+
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GamingState {
