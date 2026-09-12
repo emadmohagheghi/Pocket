@@ -5,14 +5,13 @@ import {
   Copy,
   ExternalLink,
   Pencil,
-  SquarePen,
   Trash2,
 } from "lucide-react";
-import { toast } from "sonner";
 
 import { usePocket } from "@/store";
 import { api } from "@/lib/api";
 import { cn, formatRelative, looksLikeUrl } from "@/lib/utils";
+import { playPocketSound } from "@/lib/sound";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -137,9 +136,9 @@ export function ItemRow({ item, focused, onEntryPointerDown }: Props) {
   const copy = async () => {
     try {
       await api.copyToClipboard(item.url ?? item.content);
-      toast.success("Copied to clipboard");
-    } catch (e) {
-      toast.error(String(e));
+      playPocketSound("copy");
+    } catch {
+      playPocketSound("error");
     }
   };
 
@@ -194,37 +193,23 @@ export function ItemRow({ item, focused, onEntryPointerDown }: Props) {
       }}
       onKeyDown={onKeyDownRow}
       className={cn(
-        "group flex items-start gap-3 px-1 py-3 focus-visible:outline-2 focus-visible:outline-ring",
+        "group flex items-start gap-3 px-1 py-3",
         selected && "rounded-lg bg-muted/60",
         pinStyle === "drag" && "cursor-grab select-none active:cursor-grabbing"
       )}
     >
-      <div className="relative flex size-8 shrink-0 items-center justify-center">
-        {pinStyle === "leading" ? (
-          <>
-            <SquarePen
-              className={cn(
-                "size-4 text-muted-foreground/60 transition-opacity",
-                item.pinned && "opacity-0",
-                !item.pinned &&
-                  "group-hover:opacity-0 group-focus-within:opacity-0"
-              )}
-              aria-hidden
-            />
-            <PinButton
-              pinned={item.pinned}
-              onToggle={togglePin}
-              className={cn(
-                "absolute",
-                !item.pinned &&
-                  "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-              )}
-            />
-          </>
-        ) : (
-          <SquarePen className="size-4 text-muted-foreground/60" aria-hidden />
-        )}
-      </div>
+      {pinStyle === "leading" ? (
+        <div className="relative flex size-8 shrink-0 items-center justify-center">
+          <PinButton
+            pinned={item.pinned}
+            onToggle={togglePin}
+            className={cn(
+              !item.pinned &&
+                "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+            )}
+          />
+        </div>
+      ) : null}
       <div className="min-w-0 flex-1">
         {canCollapse ? (
           <Collapsible open={expanded} onOpenChange={setExpanded}>
@@ -364,7 +349,10 @@ export function ItemRow({ item, focused, onEntryPointerDown }: Props) {
               label="Delete"
               icon={<Trash2 />}
               destructive
-              onClick={() => void deleteItem(item.id)}
+              onClick={() => {
+                playPocketSound("destructive");
+                void deleteItem(item.id);
+              }}
             />
           </div>
         ) : null}
@@ -400,7 +388,10 @@ export function ItemRow({ item, focused, onEntryPointerDown }: Props) {
           label="Delete"
           icon={<Trash2 />}
           destructive
-          onClick={() => void deleteItem(item.id)}
+          onClick={() => {
+            playPocketSound("destructive");
+            void deleteItem(item.id);
+          }}
         />
       </div>
     </div>
