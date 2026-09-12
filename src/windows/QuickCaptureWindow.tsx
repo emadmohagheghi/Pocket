@@ -22,6 +22,9 @@ export default function QuickCaptureWindow() {
   const recorderRecordingRef = useRef(false);
   const stopAndSaveRef = useRef<() => Promise<void>>(async () => {});
   const finishAutomaticVoiceRef = useRef<() => void>(() => {});
+  /** The delayed hide after a save; must be cancelled if the panel is
+   * reopened within the flash window, or it kills the fresh session. */
+  const flashHideTimerRef = useRef<number | null>(null);
   recorderRecordingRef.current = recorder.recording;
 
   useEffect(() => {
@@ -34,6 +37,10 @@ export default function QuickCaptureWindow() {
   const hideWindow = useCallback(async () => {
     // Hiding the panel must always release the microphone and discard any
     // unsaved audio, including a permission request still in flight.
+    if (flashHideTimerRef.current !== null) {
+      window.clearTimeout(flashHideTimerRef.current);
+      flashHideTimerRef.current = null;
+    }
     recorder.cancel();
     try {
       await win.hide();
@@ -49,10 +56,19 @@ export default function QuickCaptureWindow() {
 
   const flashThenHide = useCallback(() => {
     setSavedFlash(true);
-    window.setTimeout(() => void hideWindow(), 450);
+    flashHideTimerRef.current = window.setTimeout(() => {
+      flashHideTimerRef.current = null;
+      void hideWindow();
+    }, 450);
   }, [hideWindow]);
 
   useQcEvents((openMode) => {
+    // A stale save-flash timer would hide the panel right after this open.
+    if (flashHideTimerRef.current !== null) {
+      window.clearTimeout(flashHideTimerRef.current);
+      flashHideTimerRef.current = null;
+      setSavedFlash(false);
+    }
     // A second Left-Shift double-hold while recording stops and saves. Right
     // Shift uses the separate release event below for push-to-record.
     if (openMode === "voice" && recorder.isBusy()) {
