@@ -354,7 +354,7 @@ pub mod double_shift {
     };
 
     const LLKHF_INJECTED: KBDLLHOOKSTRUCT_FLAGS = KBDLLHOOKSTRUCT_FLAGS(0x10);
-    const DOUBLE_SHIFT_WINDOW_MS: u64 = 450;
+    const DOUBLE_SHIFT_WINDOW_MS: u64 = 550;
     const REPEAT_GUARD_MS: u64 = 60;
     /// Second Shift press held this long opens the voice panel instead of
     /// directly saving the selected text.
@@ -363,6 +363,9 @@ pub mod double_shift {
     /// latency), while a tap-hold resolves to voice after this threshold.
     const HOLD_FOR_VOICE_MS: u64 = 400;
     const HOLD_POLL_MS: u64 = 15;
+    /// Reconcile the hook state with the real keyboard often enough to catch
+    /// a release even when Windows drops the corresponding low-level event.
+    const RELEASE_RECONCILE_MS: u64 = 15;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum ShiftSide {
@@ -380,6 +383,8 @@ pub mod double_shift {
     /// unless requested, because any I/O in the callback risks the timeout.
     static HOOK_DEBUG: AtomicBool = AtomicBool::new(false);
     static LAST_EVENT_MS: AtomicU64 = AtomicU64::new(0);
+    static LEFT_RELEASE_OBSERVED: AtomicBool = AtomicBool::new(true);
+    static RIGHT_RELEASE_OBSERVED: AtomicBool = AtomicBool::new(true);
 
     fn debug_enabled() -> bool {
         std::env::var("POCKET_DEBUG").as_deref() == Ok("1")
@@ -471,6 +476,22 @@ pub mod double_shift {
                 std::thread::sleep(std::time::Duration::from_secs(2));
                 continue;
             }
+            // A hook cycle can end between a Shift down and up. Never carry
+            // that half-press into the new hook: it makes the next complete
+            // double-shift act only as a state reset and the following one
+            // appear to be the first gesture that works.
+            let left_released = !is_shift_physically_down(ShiftSide::Left);
+            let right_released = !is_shift_physically_down(ShiftSide::Right);
+            LEFT_RELEASE_OBSERVED.store(left_released, Ordering::Release);
+            RIGHT_RELEASE_OBSERVED.store(right_released, Ordering::Release);
+            STATE.with(|s| {
+                if let Some(state) = s.borrow_mut().as_mut() {
+                    state.left = PressState::default();
+                    state.right = PressState::default();
+                    state.left.released_since_down = left_released;
+                    state.right.released_since_down = right_released;
+                }
+            });
             debug_log("low-level keyboard hook installed");
 
             let mut msg = MSG::default();
@@ -510,23 +531,47 @@ pub mod double_shift {
         }
     }
 
-    /// Posts WM_QUIT to the hook thread so the supervisor re-registers the
-    /// hook — heals cases where Windows silently dropped it under load.
+    fn release_observed(side: ShiftSide) -> &'static AtomicBool {
+        match side {
+            ShiftSide::Left => &LEFT_RELEASE_OBSERVED,
+            ShiftSide::Right => &RIGHT_RELEASE_OBSERVED,
+        }
+    }
+
+    /// Reconciles missed Shift-up events from outside the hook callback and
+    /// periodically asks the supervisor to re-register a silently dropped
+    /// hook. The physical-state polling also heals a stale held flag before
+    /// the user's next gesture arrives.
     fn start_rehook_watchdog() {
         std::thread::Builder::new()
             .name("hook-watchdog".into())
-            .spawn(move || loop {
-                std::thread::sleep(std::time::Duration::from_secs(REHOOK_INTERVAL_SECS));
-                let tid = HOOK_THREAD_ID.load(Ordering::Relaxed);
-                debug_log(&format!("watchdog tick -> posting WM_QUIT to t{tid:x}"));
-                if tid != 0 {
-                    unsafe {
-                        let _ = PostThreadMessageW(
-                            tid,
-                            WM_QUIT,
-                            Default::default(),
-                            Default::default(),
-                        );
+            .spawn(move || {
+                let rehook_interval = std::time::Duration::from_secs(REHOOK_INTERVAL_SECS);
+                let mut next_rehook = std::time::Instant::now() + rehook_interval;
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(RELEASE_RECONCILE_MS));
+
+                    if !is_shift_physically_down(ShiftSide::Left) {
+                        LEFT_RELEASE_OBSERVED.store(true, Ordering::Release);
+                    }
+                    if !is_shift_physically_down(ShiftSide::Right) {
+                        RIGHT_RELEASE_OBSERVED.store(true, Ordering::Release);
+                    }
+
+                    if std::time::Instant::now() >= next_rehook {
+                        next_rehook = std::time::Instant::now() + rehook_interval;
+                        let tid = HOOK_THREAD_ID.load(Ordering::Relaxed);
+                        debug_log(&format!("watchdog tick -> posting WM_QUIT to t{tid:x}"));
+                        if tid != 0 {
+                            unsafe {
+                                let _ = PostThreadMessageW(
+                                    tid,
+                                    WM_QUIT,
+                                    Default::default(),
+                                    Default::default(),
+                                );
+                            }
+                        }
                     }
                 }
             })
@@ -599,6 +644,33 @@ pub mod double_shift {
             && now_ms.saturating_sub(last_down_ms) <= DOUBLE_SHIFT_WINDOW_MS
     }
 
+    /// Starts a distinct Shift press, or returns `None` for an auto-repeat.
+    /// `physical_release_observed` is the watchdog's fallback for a key-up
+    /// event that never reached the low-level hook.
+    fn begin_shift_press(
+        state: &mut PressState,
+        now_ms: u64,
+        physical_release_observed: bool,
+    ) -> Option<bool> {
+        if physical_release_observed {
+            state.released_since_down = true;
+        }
+        if !state.released_since_down {
+            return None;
+        }
+
+        let double_shift = is_double_press(
+            state.last_shift_down_ms,
+            now_ms,
+            state.intervening_key,
+            state.released_since_down,
+        );
+        state.last_shift_down_ms = now_ms;
+        state.intervening_key = false;
+        state.released_since_down = false;
+        Some(double_shift)
+    }
+
     fn handle_key(state: &mut HookState, shift_side: Option<ShiftSide>, is_keydown: bool) {
         let Some(side) = shift_side else {
             if is_keydown {
@@ -615,28 +687,33 @@ pub mod double_shift {
         if !is_keydown {
             // Shift released: the next press is a genuinely new press.
             side_state.released_since_down = true;
+            release_observed(side).store(true, Ordering::Release);
             return;
         }
-        if !side_state.released_since_down {
+        let ms = now_ms();
+        let elapsed = ms.saturating_sub(side_state.last_shift_down_ms);
+        let intervening = side_state.intervening_key;
+        let physical_release_observed = release_observed(side).swap(false, Ordering::AcqRel);
+        let recovered_missed_release = !side_state.released_since_down && physical_release_observed;
+        let released_since_down = side_state.released_since_down || physical_release_observed;
+        let Some(double_shift) = begin_shift_press(side_state, ms, physical_release_observed)
+        else {
             // Shift is being held down (OS auto-repeat): not a new press.
             if HOOK_DEBUG.load(Ordering::Relaxed) {
                 eprintln!("[pocket:hook] shift repeat ignored (held, no release yet)");
             }
             return;
+        };
+        if recovered_missed_release {
+            hook_file_log(&format!(
+                "recovered missed {side:?} Shift release before down now={ms}"
+            ));
         }
-        let ms = now_ms();
-        let elapsed = ms.saturating_sub(side_state.last_shift_down_ms);
-        let double_shift = is_double_press(
-            side_state.last_shift_down_ms,
-            ms,
-            side_state.intervening_key,
-            side_state.released_since_down,
-        );
         if HOOK_DEBUG.load(Ordering::Relaxed) {
             eprintln!(
                 "[pocket:hook] shift down elapsed={elapsed}ms window_open={} intervening={}",
                 elapsed <= DOUBLE_SHIFT_WINDOW_MS,
-                side_state.intervening_key
+                intervening
             );
         }
         // Timestamped decision trace: lets a delayed reopen be diagnosed as
@@ -646,12 +723,9 @@ pub mod double_shift {
             "decision {side:?} elapsed={elapsed} guard={} window={} intervening={} released={} -> double={double_shift} now={ms}",
             elapsed >= REPEAT_GUARD_MS,
             elapsed <= DOUBLE_SHIFT_WINDOW_MS,
-            side_state.intervening_key,
-            side_state.released_since_down,
+            intervening,
+            released_since_down,
         ));
-        side_state.last_shift_down_ms = ms;
-        side_state.intervening_key = false;
-        side_state.released_since_down = false;
 
         // A press of the other Shift key breaks that side's pair, preventing
         // Left-then-Right from being interpreted as a double press.
@@ -789,7 +863,10 @@ pub mod double_shift {
 
     #[cfg(test)]
     mod hook_tests {
-        use super::{hold_decision, is_double_press, DOUBLE_SHIFT_WINDOW_MS, REPEAT_GUARD_MS};
+        use super::{
+            begin_shift_press, hold_decision, is_double_press, PressState, DOUBLE_SHIFT_WINDOW_MS,
+            REPEAT_GUARD_MS,
+        };
 
         #[test]
         fn two_quick_distinct_presses_trigger() {
@@ -808,6 +885,26 @@ pub mod double_shift {
                 false,
                 false
             ));
+        }
+
+        #[test]
+        fn missed_key_up_is_recovered_before_the_next_gesture() {
+            let mut state = PressState::default();
+
+            assert_eq!(begin_shift_press(&mut state, 1000, true), Some(false));
+            // The low-level key-up is missing, but the physical-state watcher
+            // observed that Shift was released while the user worked elsewhere.
+            assert_eq!(begin_shift_press(&mut state, 5000, true), Some(false));
+            state.released_since_down = true;
+            assert_eq!(begin_shift_press(&mut state, 5150, true), Some(true));
+        }
+
+        #[test]
+        fn auto_repeat_is_still_ignored_without_a_physical_release() {
+            let mut state = PressState::default();
+
+            assert_eq!(begin_shift_press(&mut state, 1000, true), Some(false));
+            assert_eq!(begin_shift_press(&mut state, 1150, false), None);
         }
 
         #[test]
