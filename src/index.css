@@ -159,6 +159,16 @@ textarea {
   user-select: text;
   -webkit-user-select: text;
 }
+
+/* The capture-bar textarea scrolls (wheel) after two lines but never shows a
+   bar. Declared unlayered on purpose: the unlayered `* { scrollbar-width:
+   thin }` rule above would otherwise beat any Tailwind-layer utility. */
+.addbar-textarea {
+  scrollbar-width: none;
+}
+.addbar-textarea::-webkit-scrollbar {
+  display: none;
+}
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;

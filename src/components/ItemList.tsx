@@ -1,16 +1,16 @@
 import { forwardRef, useId, useMemo, useRef, useState } from "react";
-import { Mic, Pin, Plus, Square } from "lucide-react";
-import { toast } from "sonner";
+import { Loader2, Mic, Pause, Pin, Play, Plus, Square, X } from "lucide-react";
 
 import { usePocket } from "@/store";
 import { api } from "@/lib/api";
 import { cn, formatDuration } from "@/lib/utils";
+import { playPocketSound } from "@/lib/sound";
 import { useRecorder } from "@/hooks/useRecorder";
 import type { EntryKind, Item, Recording } from "@/types";
 import { ItemRow } from "@/components/ItemRow";
 import { VoiceRow } from "@/components/VoiceList";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 /** Small uppercase muted section label. */
 export function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -268,6 +268,7 @@ export function AddBar() {
   const [value, setValue] = useState("");
   const [savingVoice, setSavingVoice] = useState(false);
   const inputId = useId();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recorder = useRecorder();
   const voiceActive = recorder.recording || savingVoice;
 
@@ -280,6 +281,8 @@ export function AddBar() {
     const created = await createItem(text);
     if (created) {
       setValue("");
+      playPocketSound("success");
+      textareaRef.current?.focus();
     }
   };
 
@@ -299,9 +302,9 @@ export function AddBar() {
         result.durationMs,
         buffer
       );
-      toast.success("Voice note saved");
+      playPocketSound("success");
     } catch (error) {
-      toast.error(`Could not save recording: ${String(error)}`);
+      playPocketSound("error");
     } finally {
       setSavingVoice(false);
     }
@@ -318,67 +321,105 @@ export function AddBar() {
         <div className={CAPTURE_BAR_CLASS}>
           <span
             className={
-              "size-2 shrink-0 rounded-full bg-red-500" +
-              (recorder.recording ? " animate-pulse" : "")
+              "size-2 shrink-0 rounded-full " +
+              (recorder.paused
+                ? "bg-amber-500"
+                : "bg-red-500" + (recorder.recording ? " animate-pulse" : ""))
             }
             aria-hidden
           />
           <span
-            className="min-w-0 flex-1 whitespace-nowrap text-[13px] font-medium"
+            className="min-w-0 flex-1 font-mono text-xs tabular-nums text-muted-foreground"
             aria-live="polite"
           >
-            {savingVoice ? "Saving…" : "Recording…"}
-          </span>
-          <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
             {formatDuration(recorder.elapsedMs)}
           </span>
           <Button
             type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 shrink-0 px-2.5 text-xs"
+            size="icon-sm"
+            variant="ghost"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
             disabled={savingVoice}
-            onClick={() => recorder.cancel()}
+            aria-label={recorder.paused ? "Resume recording" : "Pause recording"}
+            onClick={() => (recorder.paused ? recorder.resume() : recorder.pause())}
           >
-            Cancel
+            {recorder.paused ? <Play /> : <Pause />}
           </Button>
           <Button
             type="button"
-            size="sm"
-            className="h-7 shrink-0 gap-1.5 bg-red-500 px-2.5 text-xs text-white hover:bg-red-600"
+            size="icon-sm"
+            className="shrink-0 rounded-full bg-red-500 text-white hover:bg-red-600"
             disabled={savingVoice}
+            aria-label="Save recording"
             onClick={() => void stopAndSaveVoice()}
           >
-            <Square className="size-3 fill-current" /> Save
+            {savingVoice ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <Square className="size-3.5 fill-current" />
+            )}
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            disabled={savingVoice}
+            aria-label="Discard recording"
+            onClick={() => {
+              recorder.cancel();
+              playPocketSound("close");
+            }}
+          >
+            <X />
           </Button>
         </div>
       ) : (
-        <label htmlFor={inputId} className={CAPTURE_BAR_CLASS}>
-          <Plus className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <div className="relative min-w-0 flex-1">
-            <Input
-              id={inputId}
-              value={value}
-              type="text"
-              autoComplete="off"
-              onChange={(event) => setValue(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") setValue("");
-              }}
-              placeholder="Add a note or a prompt…"
-              aria-label="Add a text item"
-              className="relative h-auto rounded-none border-0 !bg-transparent p-0 text-sm shadow-none focus-visible:border-0 focus-visible:ring-0"
-            />
-          </div>
+        <div
+          className={CAPTURE_BAR_CLASS}
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest("button, textarea")) return;
+            textareaRef.current?.focus();
+          }}
+        >
+          <button
+            type="submit"
+            aria-label="Add note"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground"
+          >
+            <Plus className="size-4" />
+          </button>
+          <Textarea
+            ref={textareaRef}
+            id={inputId}
+            value={value}
+            rows={1}
+            autoComplete="off"
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void save();
+              } else if (event.key === "Escape") {
+                setValue("");
+              }
+            }}
+            placeholder="Add a note or a prompt…"
+            aria-label="Add a text item"
+            className="addbar-textarea max-h-[41px] min-h-0 resize-none overflow-y-auto rounded-none border-none !bg-transparent p-0 text-sm leading-snug shadow-none outline-none [overflow-wrap:anywhere] translate-y-[2px]"
+          />
           <button
             type="button"
-            onClick={() => void recorder.start()}
+            onClick={() => {
+              playPocketSound("open");
+              void recorder.start();
+            }}
             aria-label="Record a voice note"
-            className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <Mic className="size-4" />
           </button>
-        </label>
+        </div>
       )}
       {recorder.error && (
         <p className="mt-1 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
