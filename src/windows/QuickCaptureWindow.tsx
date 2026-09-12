@@ -69,21 +69,34 @@ export default function QuickCaptureWindow() {
       flashHideTimerRef.current = null;
       setSavedFlash(false);
     }
-    // A second Left-Shift double-hold while recording stops and saves. Right
-    // Shift uses the separate release event below for push-to-record.
-    if (openMode === "voice" && recorder.isBusy()) {
-      leftVoiceStopRequestedRef.current = true;
-      finishAutomaticVoiceRef.current();
-      return;
-    }
 
-    setSavedFlash(false);
-    heldVoiceActiveRef.current = openMode === "voice-hold";
-    heldVoiceReleasedRef.current = false;
-    leftVoiceStopRequestedRef.current = false;
-    automaticVoiceSaveStartedRef.current = false;
-    playPocketSound("open");
-    void recorder.start();
+    void (async () => {
+      const visible = await win.isVisible();
+
+      // A second Left-Shift double-hold while recording (panel visible) stops
+      // and saves. Right Shift uses the separate release event below for
+      // push-to-record.
+      if (openMode === "voice" && recorder.isBusy()) {
+        if (visible) {
+          leftVoiceStopRequestedRef.current = true;
+          finishAutomaticVoiceRef.current();
+          return;
+        }
+        // Busy while hidden is a ghost session left by the wake-race: discard
+        // it and start fresh rather than saving a recording nobody heard.
+        // The cancel's onstop runs async, so give it a tick before starting.
+        recorder.cancel();
+        await new Promise((resolve) => window.setTimeout(resolve, 60));
+      }
+
+      setSavedFlash(false);
+      heldVoiceActiveRef.current = openMode === "voice-hold";
+      heldVoiceReleasedRef.current = false;
+      leftVoiceStopRequestedRef.current = false;
+      automaticVoiceSaveStartedRef.current = false;
+      playPocketSound("open");
+      void recorder.start();
+    })();
   });
 
   // A successful direct text capture never opens this window; Rust asks its
@@ -99,11 +112,20 @@ export default function QuickCaptureWindow() {
 
   // Losing focus does not cancel an active recording. An idle panel can close
   // itself normally when the user moves elsewhere.
+  //
+  // The focused=false handler re-verifies after a short grace period because
+  // waking a long-hidden webview emits a spurious focused=false right as the
+  // panel is shown; hiding on that blink cancelled the first capture-open
+  // and made every first double-shift-hold after idle a silent no-op.
   useEffect(() => {
     const unlistenPromise = win.onFocusChanged(({ payload: focused }) => {
-      if (!focused && !recorder.isBusy() && !savedFlash) {
-        void hideWindow();
-      }
+      if (focused) return;
+      if (recorder.isBusy() || savedFlash) return;
+      window.setTimeout(() => {
+        if (!recorder.isBusy() && !savedFlash && !document.hasFocus()) {
+          void hideWindow();
+        }
+      }, 150);
     });
     return () => {
       void unlistenPromise.then((unlisten) => unlisten());
