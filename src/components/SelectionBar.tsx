@@ -55,7 +55,10 @@ export function SelectionBar() {
 
   return (
     <div className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/50 px-2 py-2">
-      <p className="min-w-0 flex-1 truncate pl-2 text-xs text-muted-foreground">
+      <p
+        dir="auto"
+        className="min-w-0 flex-1 truncate pl-2 text-xs text-muted-foreground"
+      >
         {label}
       </p>
       <PinButton

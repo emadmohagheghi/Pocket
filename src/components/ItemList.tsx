@@ -394,6 +394,7 @@ export function AddBar() {
             id={inputId}
             value={value}
             rows={1}
+            dir="auto"
             autoComplete="off"
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={(event) => {

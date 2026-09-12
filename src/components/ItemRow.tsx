@@ -216,6 +216,7 @@ export function ItemRow({ item, focused, onEntryPointerDown }: Props) {
             <div className="grid min-w-0">
               <p
                 ref={previewRef}
+                dir="auto"
                 aria-hidden={expanded}
                 style={previewStyle}
                 className={cn(
@@ -234,6 +235,7 @@ export function ItemRow({ item, focused, onEntryPointerDown }: Props) {
                 {editing ? (
                   <Textarea
                     ref={editRef}
+                    dir="auto"
                     value={draft}
                     rows={1}
                     className="min-h-0 resize-none overflow-hidden border-none bg-transparent p-0 text-sm leading-snug shadow-none [overflow-wrap:anywhere] focus-visible:ring-0"
@@ -250,6 +252,7 @@ export function ItemRow({ item, focused, onEntryPointerDown }: Props) {
                   />
                 ) : (
                   <p
+                    dir="auto"
                     className={cn(
                       "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
                       isLink && "text-primary underline-offset-2 hover:underline"
@@ -288,6 +291,7 @@ export function ItemRow({ item, focused, onEntryPointerDown }: Props) {
         ) : editing ? (
           <Textarea
             ref={editRef}
+            dir="auto"
             value={draft}
             rows={1}
             className="min-h-0 resize-none overflow-hidden border-none bg-transparent p-0 text-sm leading-snug shadow-none [overflow-wrap:anywhere] focus-visible:ring-0"
@@ -305,6 +309,7 @@ export function ItemRow({ item, focused, onEntryPointerDown }: Props) {
         ) : (
           <p
             ref={previewRef}
+            dir="auto"
             style={previewStyle}
             className={cn(
               "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
