@@ -51,7 +51,7 @@ fn show_capture(app: &AppHandle, mode: &str) {
     let _ = win.center();
     let shown = win.show();
     let focused = win.set_focus();
-    debug_log(&format!(
+    diag_log(&format!(
         "show_capture(mode={mode}) show={shown:?} focus={focused:?}"
     ));
     let _ = app.emit_to(
@@ -506,7 +506,7 @@ pub mod double_shift {
             .append(true)
             .open(path)
         {
-            let _ = writeln!(f, "{msg}");
+            let _ = writeln!(f, "[{}] {msg}", now_ms());
         }
     }
 
@@ -556,12 +556,14 @@ pub mod double_shift {
             let is_shift = shift_side.is_some();
             if is_shift {
                 // Rare enough to be safe for diagnostics; proves whether the
-                // callback sees shift events at all.
+                // callback sees shift events at all. Timestamped so reopen
+                // delays can be correlated with hook (re)install cycles.
                 hook_file_log(&format!(
-                    "shift vk=0x{:02X} {} injected={}",
+                    "shift vk=0x{:02X} {} injected={} now={}",
                     kb.vkCode,
                     if is_keydown { "down" } else { "up" },
-                    injected
+                    injected,
+                    now_ms()
                 ));
             }
             if !injected || e2e_keys_enabled() {
@@ -637,6 +639,16 @@ pub mod double_shift {
                 side_state.intervening_key
             );
         }
+        // Timestamped decision trace: lets a delayed reopen be diagnosed as
+        // guard-rejected, window-expired, intervening-key-cancelled, or a
+        // held-shift repeat — the four ways a press can silently no-op.
+        hook_file_log(&format!(
+            "decision {side:?} elapsed={elapsed} guard={} window={} intervening={} released={} -> double={double_shift} now={ms}",
+            elapsed >= REPEAT_GUARD_MS,
+            elapsed <= DOUBLE_SHIFT_WINDOW_MS,
+            side_state.intervening_key,
+            side_state.released_since_down,
+        ));
         side_state.last_shift_down_ms = ms;
         side_state.intervening_key = false;
         side_state.released_since_down = false;
@@ -649,6 +661,7 @@ pub mod double_shift {
         }
 
         if double_shift {
+            hook_file_log(&format!("trigger {side:?} hold-watch now={}", now_ms()));
             try_trigger(&state.app, side);
         }
     }
