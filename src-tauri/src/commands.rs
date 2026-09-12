@@ -494,10 +494,11 @@ pub fn save_recording(app: AppHandle, request: tauri::ipc::Request) -> AppResult
     Ok(rec)
 }
 
-/// Frontend diagnostics channel (active with POCKET_DEBUG=1).
+/// Frontend diagnostics channel — routed into the timestamped diag file so
+/// release builds keep frontend evidence without POCKET_DEBUG.
 #[tauri::command]
 pub fn frontend_log(message: String) {
-    crate::shortcuts::debug_log(&format!("[web] {message}"));
+    crate::shortcuts::diag_log(&format!("[web] {message}"));
 }
 
 fn percent_decode(input: String) -> String {

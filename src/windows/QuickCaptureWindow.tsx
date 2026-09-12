@@ -37,6 +37,7 @@ export default function QuickCaptureWindow() {
   const hideWindow = useCallback(async () => {
     // Hiding the panel must always release the microphone and discard any
     // unsaved audio, including a permission request still in flight.
+    void api.log("QC hideWindow");
     if (flashHideTimerRef.current !== null) {
       window.clearTimeout(flashHideTimerRef.current);
       flashHideTimerRef.current = null;
@@ -113,19 +114,37 @@ export default function QuickCaptureWindow() {
   // Losing focus does not cancel an active recording. An idle panel can close
   // itself normally when the user moves elsewhere.
   //
-  // The focused=false handler re-verifies after a short grace period because
-  // waking a long-hidden webview emits a spurious focused=false right as the
-  // panel is shown; hiding on that blink cancelled the first capture-open
-  // and made every first double-shift-hold after idle a silent no-op.
+  // Windows denies the first SetForegroundWindow when another app is focused,
+  // so a show right after idle can gain focus for a blink and lose it again.
+  // Hiding on that blink swallowed the whole gesture (first hold did nothing,
+  // second worked). Instead of accepting the blur, try to regain focus for
+  // ~400ms and only hide when it cannot be regained.
   useEffect(() => {
     const unlistenPromise = win.onFocusChanged(({ payload: focused }) => {
-      if (focused) return;
+      if (focused) {
+        void api.log("QC focus gained");
+        return;
+      }
       if (recorder.isBusy() || savedFlash) return;
-      window.setTimeout(() => {
-        if (!recorder.isBusy() && !savedFlash && !document.hasFocus()) {
-          void hideWindow();
+      void api.log("QC focus lost -> regain loop");
+      let tries = 0;
+      const regain = window.setInterval(() => {
+        tries += 1;
+        if (document.hasFocus()) {
+          window.clearInterval(regain);
+          void api.log(`QC focus regained after ${tries} tries`);
+          return;
         }
-      }, 150);
+        if (tries >= 5) {
+          window.clearInterval(regain);
+          if (!document.hasFocus() && !recorder.isBusy() && !savedFlash) {
+            void api.log("QC focus not regained -> hiding");
+            void hideWindow();
+          }
+          return;
+        }
+        void win.setFocus();
+      }, 80);
     });
     return () => {
       void unlistenPromise.then((unlisten) => unlisten());
