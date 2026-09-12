@@ -127,7 +127,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
     }
   /* The main window is a frameless transparent widget: the body must stay
      see-through so only the rounded card is visible. Both windows paint

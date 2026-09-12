@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
 import { AudioLines, Check, Square } from "lucide-react";
-import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { applyTheme } from "@/lib/theme";
@@ -10,19 +9,7 @@ import { useQc, useQcEvents } from "@/qcStore";
 import { useRecorder } from "@/hooks/useRecorder";
 import { NebulaOrb } from "@/components/NebulaOrb";
 import { cn, formatDuration } from "@/lib/utils";
-import textSfxUrl from "@/assets/sounds/capture-text.mp3";
-import voiceSfxUrl from "@/assets/sounds/capture-voice.mp3";
-
-// The hidden voice-capture webview also plays confirmation audio for selected
-// text captured directly by Rust, so both sounds stay preloaded here.
-const textSfx = new Audio(textSfxUrl);
-const voiceSfx = new Audio(voiceSfxUrl);
-
-function playSfx(kind: string) {
-  const audio = kind === "voice" ? voiceSfx : textSfx;
-  audio.currentTime = 0;
-  void audio.play().catch((error) => void api.log(`sfx ${kind} failed: ${error}`));
-}
+import { playPocketSound } from "@/lib/sound";
 
 export default function QuickCaptureWindow() {
   const { settings, workspaces } = useQc();
@@ -79,14 +66,16 @@ export default function QuickCaptureWindow() {
     heldVoiceReleasedRef.current = false;
     leftVoiceStopRequestedRef.current = false;
     automaticVoiceSaveStartedRef.current = false;
-    playSfx("voice");
+    playPocketSound("open");
     void recorder.start();
   });
 
-  // A successful direct text capture never opens this window; Rust only asks
-  // its already-loaded webview to play the confirmation sound.
+  // A successful direct text capture never opens this window; Rust asks its
+  // already-loaded webview to play the same local confirmation cue.
   useEffect(() => {
-    const unlistenPromise = listen<string>("play-sfx", (event) => playSfx(event.payload));
+    const unlistenPromise = listen<string>("play-sfx", (event) => {
+      playPocketSound(event.payload === "text" ? "success" : "open");
+    });
     return () => {
       void unlistenPromise.then((unlisten) => unlisten());
     };
@@ -123,10 +112,11 @@ export default function QuickCaptureWindow() {
         buffer
       );
       await api.log(`voice stopAndSave: saved id=${saved.id} file=${saved.file}`);
+      playPocketSound("success");
       flashThenHide();
     } catch (error) {
       void api.log(`voice stopAndSave FAILED: ${error}`);
-      toast.error(`Could not save recording: ${error}`);
+      playPocketSound("error");
     }
   };
 
@@ -211,14 +201,17 @@ export default function QuickCaptureWindow() {
               <button
                 type="button"
                 onClick={() => void stopAndSave()}
-                className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-red-500 text-[13px] font-medium text-white transition-colors hover:bg-red-600 focus-visible:outline-2 focus-visible:outline-ring"
+                className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-red-500 text-[13px] font-medium text-white transition-colors hover:bg-red-600"
               >
                 <Square className="size-3.5 fill-current" /> Stop &amp; save
               </button>
               <button
                 type="button"
-                onClick={() => void hideWindow()}
-                className="h-9 rounded-lg border px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                onClick={() => {
+                  playPocketSound("close");
+                  void hideWindow();
+                }}
+                className="h-9 rounded-lg border px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent"
               >
                 Cancel
               </button>
@@ -227,15 +220,21 @@ export default function QuickCaptureWindow() {
             <>
               <button
                 type="button"
-                onClick={() => void recorder.start()}
-                className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-primary text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-ring"
+                onClick={() => {
+                  playPocketSound("open");
+                  void recorder.start();
+                }}
+                className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-primary text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 <AudioLines className="size-4" /> Start recording
               </button>
               <button
                 type="button"
-                onClick={() => void hideWindow()}
-                className="h-9 rounded-lg border px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                onClick={() => {
+                  playPocketSound("close");
+                  void hideWindow();
+                }}
+                className="h-9 rounded-lg border px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent"
               >
                 Cancel
               </button>
