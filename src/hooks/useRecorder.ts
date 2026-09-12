@@ -3,6 +3,7 @@ import { recordingExtension } from "@/lib/api";
 
 interface RecorderState {
   recording: boolean;
+  paused: boolean;
   elapsedMs: number;
   error: string | null;
 }
@@ -14,14 +15,19 @@ interface RecorderState {
 export function useRecorder() {
   const [state, setState] = useState<RecorderState>({
     recording: false,
+    paused: false,
     elapsedMs: 0,
     error: null,
   });
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const startedAtRef = useRef(0);
   const timerRef = useRef<number | null>(null);
+  /** Elapsed recording time, excluding paused stretches. */
+  const activeMsRef = useRef(0);
+  /** Start of the current unpaused segment (wall clock). */
+  const segmentStartRef = useRef(0);
+  const pausedRef = useRef(false);
   /** True from start() until the mic is live — blur-hide waits for this. */
   const startingRef = useRef(false);
   /** Invalidates a pending getUserMedia request when capture is cancelled. */
@@ -55,7 +61,13 @@ export function useRecorder() {
     streamRef.current = null;
     recorderRef.current = null;
     startingRef.current = false;
+    activeMsRef.current = 0;
+    segmentStartRef.current = 0;
+    pausedRef.current = false;
   }, []);
+
+  const elapsedNow = () =>
+    activeMsRef.current + (pausedRef.current ? 0 : Date.now() - segmentStartRef.current);
 
   useEffect(
     () => () => {
@@ -69,7 +81,7 @@ export function useRecorder() {
     if (recorderRef.current || startingRef.current) return;
     const requestId = ++startRequestRef.current;
     startingRef.current = true;
-    setState({ recording: false, elapsedMs: 0, error: null });
+    setState({ recording: false, paused: false, elapsedMs: 0, error: null });
     let stream: MediaStream;
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -88,6 +100,7 @@ export function useRecorder() {
       const unsupported = e instanceof DOMException && e.name === "NotSupportedError";
       setState({
         recording: false,
+        paused: false,
         elapsedMs: 0,
         error: unsupported
           ? "Microphone capture is unavailable in this webview context."
@@ -150,18 +163,21 @@ export function useRecorder() {
       if (e.data.size > 0) chunksRef.current.push(e.data);
     };
     mr.onstop = () => {
-      const durationMs = Date.now() - startedAtRef.current;
+      // Measure before cleanup() zeroes the segment refs.
+      const durationMs = elapsedNow();
       const blob = new Blob(chunksRef.current, { type: "audio/webm" });
       cleanup();
-      setState({ recording: false, elapsedMs: 0, error: null });
+      setState({ recording: false, paused: false, elapsedMs: 0, error: null });
       stopResolverRef.current?.({ blob, durationMs });
       stopResolverRef.current = null;
     };
     recorderRef.current = mr;
-    startedAtRef.current = Date.now();
+    activeMsRef.current = 0;
+    segmentStartRef.current = Date.now();
+    pausedRef.current = false;
     mr.start(250);
     timerRef.current = window.setInterval(() => {
-      setState((s) => ({ ...s, recording: true, elapsedMs: Date.now() - startedAtRef.current }));
+      setState((s) => ({ ...s, recording: true, elapsedMs: elapsedNow() }));
     }, 100);
     setState((s) => ({ ...s, recording: true }));
   }, [cleanup]);
@@ -184,14 +200,34 @@ export function useRecorder() {
     if (mr && mr.state !== "inactive") {
       mr.onstop = () => {
         cleanup();
-        setState({ recording: false, elapsedMs: 0, error: null });
+        setState({ recording: false, paused: false, elapsedMs: 0, error: null });
       };
       mr.stop();
     } else {
       cleanup();
-      setState({ recording: false, elapsedMs: 0, error: null });
+      setState({ recording: false, paused: false, elapsedMs: 0, error: null });
     }
   }, [cleanup]);
 
-  return { ...state, start, stop, cancel, isBusy, levelRef };
+  /** Pauses capture; the elapsed timer freezes until resume(). */
+  const pause = useCallback(() => {
+    const mr = recorderRef.current;
+    if (!mr || mr.state !== "recording" || pausedRef.current) return;
+    mr.pause();
+    activeMsRef.current += Date.now() - segmentStartRef.current;
+    pausedRef.current = true;
+    setState((s) => ({ ...s, paused: true }));
+  }, []);
+
+  /** Continues a paused take; elapsed time keeps excluding the paused stretch. */
+  const resume = useCallback(() => {
+    const mr = recorderRef.current;
+    if (!mr || mr.state !== "paused" || !pausedRef.current) return;
+    mr.resume();
+    pausedRef.current = false;
+    segmentStartRef.current = Date.now();
+    setState((s) => ({ ...s, paused: false }));
+  }, []);
+
+  return { ...state, start, stop, cancel, pause, resume, isBusy, levelRef };
 }
