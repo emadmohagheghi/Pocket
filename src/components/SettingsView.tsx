@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { open as openFile, save } from "@tauri-apps/plugin-dialog";
-import { toast } from "sonner";
 import {
   Download,
   FolderOpen,
@@ -13,6 +12,11 @@ import {
 import { usePocket } from "@/store";
 import { api } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
+import {
+  arePocketSoundsEnabled,
+  playPocketSound,
+  setPocketSoundsEnabled,
+} from "@/lib/sound";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -53,6 +57,7 @@ export function SettingsView() {
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [soundsEnabled, setSoundsEnabled] = useState(arePocketSoundsEnabled);
 
   useEffect(() => {
     void api.getStorageInfo().then(setStorage).catch(() => {});
@@ -68,18 +73,10 @@ export function SettingsView() {
       });
       if (!path) return;
 
-      const summary = await api.exportBackup(path);
-      if (summary.missingAudio > 0) {
-        toast.warning(
-          `Backup saved, but ${summary.missingAudio} audio file(s) were missing`
-        );
-      } else {
-        toast.success(
-          `Backup exported: ${summary.items} items, ${summary.audioFiles} audio files`
-        );
-      }
-    } catch (error) {
-      toast.error(`Could not export backup: ${String(error)}`);
+      await api.exportBackup(path);
+      playPocketSound("success");
+    } catch {
+      playPocketSound("error");
     } finally {
       setExporting(false);
     }
@@ -95,21 +92,10 @@ export function SettingsView() {
       });
       if (typeof path !== "string") return;
 
-      const summary = await api.importBackup(path);
-      const imported = summary.itemsImported + summary.recordingsImported;
-      if (imported === 0 && summary.workspacesCreated === 0) {
-        toast.info("This backup is already imported");
-      } else if (summary.missingAudio > 0) {
-        toast.warning(
-          `Imported ${imported} item(s); ${summary.missingAudio} audio file(s) were unavailable`
-        );
-      } else {
-        toast.success(
-          `Imported ${summary.itemsImported} items and ${summary.audioFilesRestored} audio files`
-        );
-      }
-    } catch (error) {
-      toast.error(`Could not import backup: ${String(error)}`);
+      await api.importBackup(path);
+      playPocketSound("success");
+    } catch {
+      playPocketSound("error");
     } finally {
       setImporting(false);
     }
@@ -147,6 +133,18 @@ export function SettingsView() {
               </SelectGroup>
             </SelectContent>
           </Select>
+        </Row>
+        <Row label="Interface sounds" description="Quiet cues for saves, copies and recording actions">
+          <Switch
+            checked={soundsEnabled}
+            onCheckedChange={(enabled) => {
+              if (!enabled) playPocketSound("toggleOff");
+              setSoundsEnabled(enabled);
+              setPocketSoundsEnabled(enabled);
+              if (enabled) playPocketSound("toggleOn");
+            }}
+            aria-label="Interface sounds"
+          />
         </Row>
         <Row label="Note preview">
           <ToggleGroup
@@ -231,7 +229,7 @@ export function SettingsView() {
             <Button
               variant="outline"
               className="shrink-0"
-              onClick={() => void api.openDataFolder().catch((e) => { toast.error(String(e)); })}
+              onClick={() => void api.openDataFolder().catch(() => {})}
             >
               <FolderOpen className="size-4" /> Open folder
             </Button>

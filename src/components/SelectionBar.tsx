@@ -1,10 +1,10 @@
 import { Copy, Pencil, Trash2, X } from "lucide-react";
-import { toast } from "sonner";
 
 import { PinButton } from "@/components/PinButton";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { usePocket } from "@/store";
+import { playPocketSound } from "@/lib/sound";
 
 export function SelectionBar() {
   const {
@@ -35,17 +35,19 @@ export function SelectionBar() {
     if (!isText || !("content" in entry)) return;
     try {
       await api.copyToClipboard(entry.url ?? entry.content);
-      toast.success("Copied to clipboard");
-    } catch (error) {
-      toast.error(String(error));
+      playPocketSound("copy");
+    } catch {
+      playPocketSound("error");
     }
   };
 
   const remove = async () => {
     if (isText) {
+      playPocketSound("destructive");
       await deleteItem(entry.id);
     } else {
       if (player?.recordingId === entry.id) stopPlayer();
+      playPocketSound("destructive");
       await deleteRecording(entry.id);
     }
     selectEntry(null);

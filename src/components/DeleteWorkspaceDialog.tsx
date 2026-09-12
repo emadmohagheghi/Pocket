@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 
 import { usePocket } from "@/store";
 import { api } from "@/lib/api";
+import { playPocketSound } from "@/lib/sound";
 import type { Counts } from "@/types";
 import {
   AlertDialog,
@@ -54,9 +54,9 @@ export function DeleteWorkspaceDialog({ workspaceId, onClose }: Props) {
     if (!workspaceId) return;
     setBusy(true);
     await deleteWorkspace(workspaceId);
+    playPocketSound("destructive");
     setBusy(false);
     onClose();
-    toast.success(`Workspace "${workspace?.name}" deleted`);
   };
 
   return (

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { AudioLines, Check, Pause, Pencil, Play, RotateCcw, RotateCw, Square, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 
 import { usePocket } from "@/store";
 import { api, voiceUrl } from "@/lib/api";
 import { cn, formatBytes, formatDuration, formatRelative } from "@/lib/utils";
+import { playPocketSound } from "@/lib/sound";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ItemList";
@@ -32,7 +32,7 @@ export function VoiceList() {
             onClick={() =>
               api
                 .openVoiceCapture()
-                .catch((e) => toast.error(String(e)))
+                .catch(() => {})
             }
           >
             <AudioLines className="size-3.5" /> Record a voice note
@@ -146,7 +146,7 @@ export function VoiceRow({
         }
       }}
       className={cn(
-        "group flex items-center gap-3 px-1 py-3 focus-visible:outline-2 focus-visible:outline-ring",
+        "group flex items-center gap-3 px-1 py-3",
         selected && "rounded-lg bg-muted/60",
         pinStyle === "drag" && "cursor-grab select-none active:cursor-grabbing"
       )}
@@ -229,8 +229,8 @@ export function VoiceRow({
               aria-label="Delete recording"
               onClick={() => {
                 if (isCurrent) stopPlayer();
+                playPocketSound("destructive");
                 void deleteRecording(recording.id);
-                toast.success("Recording deleted");
               }}
             >
               <Trash2 />
@@ -261,8 +261,8 @@ export function VoiceRow({
           aria-label="Delete recording"
           onClick={() => {
             if (isCurrent) stopPlayer();
+            playPocketSound("destructive");
             void deleteRecording(recording.id);
-            toast.success("Recording deleted");
           }}
         >
           <Trash2 />
@@ -346,7 +346,6 @@ export function PlayerBar() {
         onPlay={(e) => reportLive(e.currentTarget, true)}
         onPause={(e) => reportLive(e.currentTarget, false)}
         onEnded={() => reportPlayerProgress(dur, dur, false)}
-        onError={() => toast.error("Could not load recording")}
       />
       <div className="flex items-center gap-2">
         <p className="min-w-0 flex-1 truncate text-xs font-medium">{player.name}</p>

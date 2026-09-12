@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
-import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import type {
@@ -132,7 +131,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
         });
         await get().refreshItems();
       } catch (e) {
-        toast.error(`Failed to load data: ${errMessage(e)}`);
       } finally {
         set({ ready: true });
       }
@@ -159,7 +157,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
       const data = await api.getItems(wsId);
       set({ data });
     } catch (e) {
-      toast.error(`Failed to load items: ${errMessage(e)}`);
     }
   },
 
@@ -169,7 +166,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
       set((s) => ({ workspaces: [...s.workspaces, ws] }));
       return ws;
     } catch (e) {
-      toast.error(errMessage(e));
       return null;
     }
   },
@@ -181,7 +177,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
         workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, name: ws.name } : w)),
       }));
     } catch (e) {
-      toast.error(errMessage(e));
     }
   },
 
@@ -192,7 +187,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
       await api.log("deleteWorkspace: backend resolved");
     } catch (e) {
       await api.log(`deleteWorkspace: backend FAILED: ${errMessage(e)}`);
-      toast.error(errMessage(e));
     }
   },
 
@@ -201,7 +195,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
       await api.setActiveWorkspace(id);
       // The state-changed event refreshes everything else.
     } catch (e) {
-      toast.error(errMessage(e));
     }
   },
 
@@ -212,7 +205,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
       const item = await api.createItem(wsId, { itemType: "text", content });
       return item;
     } catch (e) {
-      toast.error(errMessage(e));
       return null;
     }
   },
@@ -223,7 +215,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
     try {
       await api.updateItem(wsId, itemId, patch as Record<string, unknown>);
     } catch (e) {
-      toast.error(errMessage(e));
     }
   },
 
@@ -233,7 +224,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
     try {
       await api.deleteItem(wsId, itemId);
     } catch (e) {
-      toast.error(errMessage(e));
     }
   },
 
@@ -243,7 +233,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
     try {
       await api.setPinned(wsId, kind, entryId, pinned);
     } catch (e) {
-      toast.error(errMessage(e));
     }
   },
 
@@ -253,7 +242,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
     try {
       await api.renameRecording(wsId, recordingId, name);
     } catch (e) {
-      toast.error(errMessage(e));
     }
   },
 
@@ -263,7 +251,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
     try {
       await api.deleteRecording(wsId, recordingId);
     } catch (e) {
-      toast.error(errMessage(e));
     }
   },
 
@@ -272,7 +259,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
       const settings = await api.updateSettings(patch);
       set((s) => ({ settings: s.settings ? { ...s.settings, ...settings } : settings }));
     } catch (e) {
-      toast.error(errMessage(e));
     }
   },
 

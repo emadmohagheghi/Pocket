@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
-import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import type { Settings, WorkspaceInfo } from "@/types";
@@ -23,7 +22,6 @@ export const useQc = create<QcStore>((set) => ({
       const s = await api.getState();
       set({ settings: s.settings, workspaces: s.workspaces });
     } catch (e) {
-      toast.error(String(e));
     }
   },
 }));

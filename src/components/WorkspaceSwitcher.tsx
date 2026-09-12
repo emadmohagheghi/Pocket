@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 
 import { usePocket } from "@/store";
 import { cn } from "@/lib/utils";
@@ -53,7 +52,6 @@ export function WorkspacesDialog({ open, onClose }: { open: boolean; onClose: ()
     const current = workspaces.find((w) => w.id === editingId)?.name;
     if (name && name !== current) {
       await renameWorkspace(editingId, name);
-      toast.success("Workspace renamed");
     }
     setEditingId(null);
   };
