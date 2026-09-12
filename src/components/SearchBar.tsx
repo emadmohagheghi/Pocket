@@ -1,13 +1,11 @@
 import { useEffect, useId, useState, type RefObject } from "react";
 import { CornerDownLeft, Search } from "lucide-react";
-import { toast } from "sonner";
 
 import { usePocket } from "@/store";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Kbd } from "@/components/ui/kbd";
 import type { SearchHit } from "@/types";
 
 interface SearchBarProps {
@@ -46,10 +44,9 @@ export function SearchBar({ inputRef }: SearchBarProps) {
           setHits(results);
           setSearching(false);
         })
-        .catch((error) => {
+        .catch(() => {
           if (cancelled) return;
           setSearching(false);
-          toast.error(String(error));
         });
     }, 120);
 
@@ -87,7 +84,7 @@ export function SearchBar({ inputRef }: SearchBarProps) {
     <div className="relative min-w-0 flex-1">
       <label
         htmlFor={inputId}
-        className="flex items-center gap-2.5 rounded-xl bg-muted/60 px-3.5 py-2.5 transition-colors focus-within:bg-muted"
+        className="flex h-10 items-center gap-2.5 rounded-xl bg-muted/60 px-3.5 transition-colors focus-within:bg-muted"
       >
         <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         <div className="relative min-w-0 flex-1">
@@ -109,7 +106,6 @@ export function SearchBar({ inputRef }: SearchBarProps) {
             onKeyDown={onKeyDown}
           />
         </div>
-        <Kbd className="shrink-0 bg-background/70 px-1.5 text-[10px]">Ctrl + K</Kbd>
       </label>
 
       {showResults ? (

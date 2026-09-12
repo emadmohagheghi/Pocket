@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 import {
   FolderOpen,
   Layers,
@@ -26,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
 import { applyTheme } from "@/lib/theme";
+import { playPocketSound } from "@/lib/sound";
 
 export default function MainWindow() {
   const { init, settings, gaming, selectedEntry, selectEntry } = usePocket();
@@ -36,7 +36,7 @@ export default function MainWindow() {
   useEffect(() => {
     void init()
       .then(() => api.frontendReady())
-      .catch((err) => toast.error(String(err)));
+      .catch(() => {});
   }, [init]);
 
   useEffect(() => {
@@ -91,7 +91,7 @@ export default function MainWindow() {
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+                className="size-10 shrink-0 text-muted-foreground hover:text-foreground"
                 aria-label="More options"
               >
                 <MoreHorizontal />
@@ -99,10 +99,20 @@ export default function MainWindow() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuGroup>
-                <DropdownMenuItem onClick={() => setWorkspacesOpen(true)}>
+                <DropdownMenuItem
+                  onClick={() => {
+                    playPocketSound("open");
+                    setWorkspacesOpen(true);
+                  }}
+                >
                   <Layers /> Workspaces
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
+                <DropdownMenuItem
+                  onClick={() => {
+                    playPocketSound("open");
+                    setSettingsOpen(true);
+                  }}
+                >
                   <SettingsIcon /> Settings
                 </DropdownMenuItem>
               </DropdownMenuGroup>
@@ -111,7 +121,7 @@ export default function MainWindow() {
                 <DropdownMenuItem
                   className="whitespace-nowrap"
                   onClick={() =>
-                    void api.openDataFolder().catch((err) => toast.error(String(err)))
+                    void api.openDataFolder().catch(() => {})
                   }
                 >
                   <FolderOpen /> Open data folder
@@ -120,9 +130,9 @@ export default function MainWindow() {
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem
-                  onClick={() =>
-                    void api.closeWindow().catch((err) => toast.error(String(err)))
-                  }
+                onClick={() =>
+                  void api.closeWindow().catch(() => {})
+                }
                 >
                   <X /> Close Window
                 </DropdownMenuItem>
