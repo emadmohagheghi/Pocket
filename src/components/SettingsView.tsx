@@ -303,7 +303,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         <DialogHeader className="shrink-0 border-b px-5 pb-4">
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
+        <div className="scroll-fade min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
           <SettingsView />
         </div>
       </DialogContent>

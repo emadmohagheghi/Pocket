@@ -149,7 +149,7 @@ export default function MainWindow() {
         )}
 
         {/* Unified feed. */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2 pt-1">
+        <div className="scroll-fade min-h-0 flex-1 overflow-y-auto px-4 pb-2 pt-1">
           <ItemList />
         </div>
 

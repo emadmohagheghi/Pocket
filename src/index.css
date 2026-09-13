@@ -142,9 +142,15 @@
     }
 }
 
-/* Thin, muted scrollbars matching the dark theme. */
+/* Thin scrollbars that stay hidden until the pointer is over their scroll
+   container — hovering any content inside it (an ancestor :hover chain)
+   reveals the thumb. Thumb space is always reserved, so revealing never
+   shifts layout. */
 * {
   scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
   scrollbar-color: var(--muted) transparent;
 }
 
@@ -177,11 +183,17 @@ textarea {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--muted);
+  background: transparent;
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+/* Last so it wins the specificity tie when the thumb itself is hovered. */
 *::-webkit-scrollbar-thumb:hover {
   background: var(--muted-foreground);
   border: 2px solid transparent;
