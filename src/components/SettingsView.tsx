@@ -40,7 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { StorageInfo } from "@/types";
+import type { Settings, StorageInfo } from "@/types";
 
 const NOTE_PREVIEW_OPTIONS = [
   { value: "1", label: "1", ariaLabel: "1 line" },
@@ -53,7 +53,8 @@ const NOTE_PREVIEW_OPTIONS = [
 ] as const;
 
 export function SettingsView() {
-  const { settings, setSettings } = usePocket();
+  const settings = usePocket((s) => s.settings);
+  const setSettings = usePocket((s) => s.setSettings);
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -121,7 +122,7 @@ export function SettingsView() {
           />
         </Row>
         <Row label="Theme">
-          <Select value={settings.theme} onValueChange={(v) => void setSettings({ theme: v as never })}>
+          <Select value={settings.theme} onValueChange={(v) => void setSettings({ theme: v as Settings["theme"] })}>
             <SelectTrigger className="w-32" aria-label="Theme">
               <SelectValue />
             </SelectTrigger>

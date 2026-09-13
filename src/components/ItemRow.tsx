@@ -28,14 +28,14 @@ interface Props {
 }
 
 export function ItemRow({ item, focused }: Props) {
-  const {
-    updateItem,
-    deleteItem,
-    setEntryPinned,
-    settings,
-    editRequest,
-    clearEditRequest,
-  } = usePocket();
+  // Field selectors: rows must not re-render on unrelated store traffic such
+  // as voice-player progress while a recording plays.
+  const updateItem = usePocket((s) => s.updateItem);
+  const deleteItem = usePocket((s) => s.deleteItem);
+  const setEntryPinned = usePocket((s) => s.setEntryPinned);
+  const clearEditRequest = usePocket((s) => s.clearEditRequest);
+  const editRequest = usePocket((s) => s.editRequest);
+  const previewLineLimit = usePocket((s) => s.settings?.notePreviewLines ?? 5);
   const [isExpandable, setIsExpandable] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -43,7 +43,6 @@ export function ItemRow({ item, focused }: Props) {
   const rowRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLParagraphElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
-  const previewLineLimit = settings?.notePreviewLines ?? 5;
   const collapseEnabled = previewLineLimit > 0;
   const canCollapse = collapseEnabled && isExpandable;
   const previewStyle = collapseEnabled
@@ -162,6 +161,28 @@ export function ItemRow({ item, focused }: Props) {
   // as a clickable link. Detected at render time, never persisted as a type.
   const isLink = looksLikeUrl(item.content) || (item.url !== null && looksLikeUrl(item.url));
   const linkTarget = item.url ?? item.content;
+
+  // One shared editing field for both the collapsible and plain layouts.
+  const editField = (
+    <Textarea
+      ref={editRef}
+      dir="auto"
+      value={draft}
+      rows={1}
+      className="min-h-0 resize-none overflow-hidden border-none bg-transparent p-0 text-sm leading-snug shadow-none [overflow-wrap:anywhere] focus-visible:ring-0"
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          void saveEdit();
+        } else if (e.key === "Escape") {
+          setEditing(false);
+        }
+      }}
+      onBlur={() => void saveEdit()}
+    />
+  );
+
   const hoverActions = (
     <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
       <PinButton pinned={item.pinned} onToggle={togglePin} />
@@ -227,23 +248,7 @@ export function ItemRow({ item, focused }: Props) {
                 className="col-start-1 row-start-1 min-h-0 min-w-0 self-start overflow-hidden data-[state=closed]:pointer-events-none data-[state=closed]:animate-[pocket-collapsible-up_180ms_ease-in] data-[state=open]:animate-[pocket-collapsible-down_220ms_ease-out] motion-reduce:animate-none"
               >
                 {editing ? (
-                  <Textarea
-                    ref={editRef}
-                    dir="auto"
-                    value={draft}
-                    rows={1}
-                    className="min-h-0 resize-none overflow-hidden border-none bg-transparent p-0 text-sm leading-snug shadow-none [overflow-wrap:anywhere] focus-visible:ring-0"
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        void saveEdit();
-                      } else if (e.key === "Escape") {
-                        setEditing(false);
-                      }
-                    }}
-                    onBlur={() => void saveEdit()}
-                  />
+                  editField
                 ) : (
                   <p
                     dir="auto"
@@ -283,23 +288,7 @@ export function ItemRow({ item, focused }: Props) {
             </div>
           </Collapsible>
         ) : editing ? (
-          <Textarea
-            ref={editRef}
-            dir="auto"
-            value={draft}
-            rows={1}
-            className="min-h-0 resize-none overflow-hidden border-none bg-transparent p-0 text-sm leading-snug shadow-none [overflow-wrap:anywhere] focus-visible:ring-0"
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void saveEdit();
-              } else if (e.key === "Escape") {
-                setEditing(false);
-              }
-            }}
-            onBlur={() => void saveEdit()}
-          />
+          editField
         ) : (
           <p
             ref={previewRef}

@@ -38,7 +38,8 @@ const CAPTURE_BAR_CLASS =
 
 /** Single unified feed: text items and voice recordings together, newest first. */
 export function ItemList() {
-  const { data, focusItemId } = usePocket();
+  const data = usePocket((s) => s.data);
+  const focusItemId = usePocket((s) => s.focusItemId);
 
   const items = useMemo<Item[]>(() => data?.items ?? [], [data]);
 
@@ -125,7 +126,8 @@ export function ItemList() {
 
 /** Pinned bottom capture bar (rendered outside the scroll flow). */
 export function AddBar() {
-  const { createItem, settings } = usePocket();
+  const createItem = usePocket((s) => s.createItem);
+  const activeWorkspaceId = usePocket((s) => s.settings?.activeWorkspaceId);
   const [value, setValue] = useState("");
   const [savingVoice, setSavingVoice] = useState(false);
   const inputId = useId();
@@ -158,13 +160,14 @@ export function AddBar() {
     try {
       const buffer = await result.blob.arrayBuffer();
       await api.saveRecording(
-        settings?.activeWorkspaceId ?? "",
+        activeWorkspaceId ?? "",
         `Voice note ${new Date().toLocaleString()}`,
         result.durationMs,
         buffer
       );
       playPocketSound("success");
     } catch (error) {
+      void api.log(`voice AddBar save FAILED: ${error}`);
       playPocketSound("error");
     } finally {
       setSavingVoice(false);

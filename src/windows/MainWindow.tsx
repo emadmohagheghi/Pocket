@@ -27,7 +27,11 @@ import { applyTheme } from "@/lib/theme";
 import { playPocketSound } from "@/lib/sound";
 
 export default function MainWindow() {
-  const { init, settings, gaming } = usePocket();
+  // Field selectors: keeps this window (and everything subscribed below it)
+  // from re-rendering on unrelated store changes like player progress.
+  const init = usePocket((s) => s.init);
+  const settings = usePocket((s) => s.settings);
+  const gaming = usePocket((s) => s.gaming);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);

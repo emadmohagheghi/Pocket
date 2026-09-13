@@ -1,60 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { AudioLines, Check, Pause, Pencil, Play, RotateCcw, RotateCw, Square, Trash2 } from "lucide-react";
+import { Check, Pause, Pencil, Play, RotateCcw, RotateCw, Square, Trash2 } from "lucide-react";
 
 import { usePocket } from "@/store";
-import { api, voiceUrl } from "@/lib/api";
+import { voiceUrl } from "@/lib/api";
 import { formatBytes, formatDuration, formatRelative } from "@/lib/utils";
 import { playPocketSound } from "@/lib/sound";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SectionLabel } from "@/components/ItemList";
 import { PinButton } from "@/components/PinButton";
 import type { Recording } from "@/types";
-
-export function VoiceList() {
-  const { data } = usePocket();
-  const recordings = data?.recordings ?? [];
-
-  if (recordings.length === 0) {
-    return (
-      <div className="px-1 pb-1 pt-3">
-        <SectionLabel>Voice</SectionLabel>
-        <p className="px-1 text-[15px] font-semibold text-foreground">No voice notes yet</p>
-        <p className="mt-1 max-w-md px-1 text-[13px] leading-relaxed text-muted-foreground">
-          Start a recording with the microphone button or from the tray menu.
-          Recordings never leave this machine.
-        </p>
-        <div className="px-1 pt-3">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5 text-xs"
-            onClick={() =>
-              api
-                .openVoiceCapture()
-                .catch(() => {})
-            }
-          >
-            <AudioLines className="size-3.5" /> Record a voice note
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  const sorted = [...recordings].sort((a, b) => b.createdAt - a.createdAt);
-
-  return (
-    <div className="px-1 pt-1" role="list">
-      <SectionLabel>Voice notes</SectionLabel>
-      <div className="divide-y divide-border/70" role="list">
-        {sorted.map((rec) => (
-          <VoiceRow key={rec.id} recording={rec} />
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export function VoiceRow({
   recording,
@@ -63,18 +17,18 @@ export function VoiceRow({
   recording: Recording;
   focused?: boolean;
 }) {
-  const {
-    deleteRecording,
-    renameRecording,
-    player,
-    playerPlaying,
-    playRecording,
-    togglePlayer,
-    stopPlayer,
-    setEntryPinned,
-    editRequest,
-    clearEditRequest,
-  } = usePocket();
+  // Field selectors: rows must not re-render on unrelated store traffic such
+  // as other rows' edits or the capture bar's state.
+  const deleteRecording = usePocket((s) => s.deleteRecording);
+  const renameRecording = usePocket((s) => s.renameRecording);
+  const player = usePocket((s) => s.player);
+  const playerPlaying = usePocket((s) => s.playerPlaying);
+  const playRecording = usePocket((s) => s.playRecording);
+  const togglePlayer = usePocket((s) => s.togglePlayer);
+  const stopPlayer = usePocket((s) => s.stopPlayer);
+  const setEntryPinned = usePocket((s) => s.setEntryPinned);
+  const editRequest = usePocket((s) => s.editRequest);
+  const clearEditRequest = usePocket((s) => s.clearEditRequest);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(recording.name);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -208,18 +162,16 @@ export function VoiceRow({
  * dispatch play/pause/seek through the store.
  */
 export function PlayerBar() {
-  const {
-    player,
-    playerPlaying,
-    playerTime,
-    playerDuration,
-    playerSeekRequest,
-    togglePlayer,
-    stopPlayer,
-    requestPlayerSeek,
-    skipPlayer,
-    reportPlayerProgress,
-  } = usePocket();
+  const player = usePocket((s) => s.player);
+  const playerPlaying = usePocket((s) => s.playerPlaying);
+  const playerTime = usePocket((s) => s.playerTime);
+  const playerDuration = usePocket((s) => s.playerDuration);
+  const playerSeekRequest = usePocket((s) => s.playerSeekRequest);
+  const togglePlayer = usePocket((s) => s.togglePlayer);
+  const stopPlayer = usePocket((s) => s.stopPlayer);
+  const requestPlayerSeek = usePocket((s) => s.requestPlayerSeek);
+  const skipPlayer = usePocket((s) => s.skipPlayer);
+  const reportPlayerProgress = usePocket((s) => s.reportPlayerProgress);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const src = player ? voiceUrl(player.wsId, player.file) : "";

@@ -15,8 +15,11 @@ import { DeleteWorkspaceDialog } from "@/components/DeleteWorkspaceDialog";
 
 /** Workspace list/switch/create/rename/delete, opened from the "…" menu. */
 export function WorkspacesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { workspaces, settings, setActiveWorkspace, createWorkspace, renameWorkspace } =
-    usePocket();
+  const workspaces = usePocket((s) => s.workspaces);
+  const activeWorkspaceId = usePocket((s) => s.settings?.activeWorkspaceId);
+  const setActiveWorkspace = usePocket((s) => s.setActiveWorkspace);
+  const createWorkspace = usePocket((s) => s.createWorkspace);
+  const renameWorkspace = usePocket((s) => s.renameWorkspace);
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -95,7 +98,7 @@ export function WorkspacesDialog({ open, onClose }: { open: boolean; onClose: ()
                     <span
                       className={cn(
                         "size-2 shrink-0 rounded-full",
-                        settings?.activeWorkspaceId === w.id ? "bg-emerald-500" : "bg-transparent"
+                        activeWorkspaceId === w.id ? "bg-emerald-500" : "bg-transparent"
                       )}
                       aria-hidden
                     />
