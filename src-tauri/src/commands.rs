@@ -586,6 +586,9 @@ pub fn update_settings(app: AppHandle, patch: SettingsPatch) -> AppResult<Settin
             // clients enable the feature while its runtime gate is disabled.
             s.gaming_detection_enabled = v && crate::gaming::ENABLED;
         }
+        if let Some(v) = patch.always_on_top {
+            s.always_on_top = v;
+        }
         if let Some(v) = patch.theme {
             if matches!(v.as_str(), "system" | "light" | "dark") {
                 s.theme = v;
@@ -611,8 +614,23 @@ pub fn update_settings(app: AppHandle, patch: SettingsPatch) -> AppResult<Settin
     if autostart_changed {
         apply_autostart(&app);
     }
+    if patch.always_on_top.is_some() {
+        apply_always_on_top(&app);
+    }
     state_changed(&app);
     Ok(settings)
+}
+
+/// Sync the main window's always-on-top state with the persisted setting.
+pub fn apply_always_on_top(app: &AppHandle) {
+    let enabled = {
+        let store = app.state::<Mutex<Store>>();
+        let guard = store.lock().unwrap();
+        guard.settings.always_on_top
+    };
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.set_always_on_top(enabled);
+    }
 }
 
 /// Sync the OS autostart registration with the persisted setting.
