@@ -38,9 +38,9 @@ export function ItemRow({ item, focused }: Props) {
   const previewLineLimit = usePocket((s) => s.settings?.notePreviewLines ?? 5);
   const [isExpandable, setIsExpandable] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const [localEditing, setLocalEditing] = useState(false);
   const [draft, setDraft] = useState(item.content);
-  const rowRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLLIElement>(null);
   const previewRef = useRef<HTMLParagraphElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
   const collapseEnabled = previewLineLimit > 0;
@@ -48,6 +48,15 @@ export function ItemRow({ item, focused }: Props) {
   const previewStyle = collapseEnabled
     ? { WebkitLineClamp: previewLineLimit }
     : undefined;
+
+  // An outstanding store edit request (from search) drives editing by
+  // derivation — the row is editing while its request is open, so no effect
+  // is needed to copy the request into local state.
+  const editNonce =
+    editRequest?.kind === "text" && editRequest.id === item.id
+      ? editRequest.nonce
+      : null;
+  const editing = localEditing || editNonce !== null;
 
   useEffect(() => {
     if (focused) {
@@ -67,13 +76,6 @@ export function ItemRow({ item, focused }: Props) {
     }
   }, [editing, item.content]);
 
-  useEffect(() => {
-    if (editRequest?.kind !== "text" || editRequest.id !== item.id) return;
-    if (canCollapse) setExpanded(true);
-    setEditing(true);
-    clearEditRequest();
-  }, [canCollapse, clearEditRequest, editRequest, item.id]);
-
   useLayoutEffect(() => {
     if (!collapseEnabled) {
       setIsExpandable(false);
@@ -87,11 +89,9 @@ export function ItemRow({ item, focused }: Props) {
     let cancelled = false;
     const measure = () => {
       if (cancelled) return;
-      const overflowsFiveLines = preview.scrollHeight > preview.clientHeight + 1;
-      setIsExpandable((current) =>
-        current === overflowsFiveLines ? current : overflowsFiveLines
-      );
-      if (!overflowsFiveLines) setExpanded(false);
+      const overflows = preview.scrollHeight > preview.clientHeight + 1;
+      setIsExpandable((current) => (current === overflows ? current : overflows));
+      if (!overflows) setExpanded(false);
     };
 
     measure();
@@ -132,12 +132,17 @@ export function ItemRow({ item, focused }: Props) {
     }
   };
 
+  const endEditing = () => {
+    setLocalEditing(false);
+    clearEditRequest();
+  };
+
   const saveEdit = async () => {
     const content = draft.trim();
     if (content && content !== item.content) {
       await updateItem(item.id, { content });
     }
-    setEditing(false);
+    endEditing();
   };
 
   const togglePin = () => void setEntryPinned("text", item.id, !item.pinned);
@@ -176,7 +181,7 @@ export function ItemRow({ item, focused }: Props) {
           e.preventDefault();
           void saveEdit();
         } else if (e.key === "Escape") {
-          setEditing(false);
+          endEditing();
         }
       }}
       onBlur={() => void saveEdit()}
@@ -197,10 +202,7 @@ export function ItemRow({ item, focused }: Props) {
       <RowButton
         label="Edit"
         icon={<Pencil />}
-        onClick={() => {
-          if (canCollapse) setExpanded(true);
-          setEditing(true);
-        }}
+        onClick={() => setLocalEditing(true)}
       />
       <RowButton
         label="Delete"
@@ -215,104 +217,187 @@ export function ItemRow({ item, focused }: Props) {
   );
 
   return (
-    <div
+    <li
       ref={rowRef}
-      role="listitem"
       tabIndex={0}
-      aria-expanded={canCollapse ? expanded : undefined}
       data-tauri-drag-region="deep"
       data-item-id={item.id}
       onKeyDown={onKeyDownRow}
       className="group flex items-start gap-3 px-1 py-3"
     >
-      <div className="min-w-0 flex-1">
-        {canCollapse ? (
-          <Collapsible open={expanded} onOpenChange={setExpanded}>
-            <div className="grid min-w-0">
-              <p
-                ref={previewRef}
-                dir="auto"
-                aria-hidden={expanded}
-                style={previewStyle}
-                className={cn(
-                  "col-start-1 row-start-1 self-start overflow-hidden whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [overflow-wrap:anywhere] transition-opacity duration-150",
-                  expanded && "pointer-events-none opacity-0",
-                  isLink && "text-primary underline-offset-2 hover:underline"
-                )}
-              >
-                {item.content}
-              </p>
+      <ItemBody
+        item={item}
+        canCollapse={canCollapse}
+        collapseEnabled={collapseEnabled}
+        previewStyle={previewStyle}
+        isLink={isLink}
+        editing={editing}
+        editField={editField}
+        expanded={expanded}
+        setExpanded={setExpanded}
+        previewRef={previewRef}
+        hoverActions={hoverActions}
+      />
+    </li>
+  );
+}
 
-              <CollapsibleContent
-                aria-hidden={!expanded}
-                className="col-start-1 row-start-1 min-h-0 min-w-0 self-start overflow-hidden data-[state=closed]:pointer-events-none data-[state=closed]:animate-[pocket-collapsible-up_180ms_ease-in] data-[state=open]:animate-[pocket-collapsible-down_220ms_ease-out] motion-reduce:animate-none"
-              >
-                {editing ? (
-                  editField
-                ) : (
-                  <p
-                    dir="auto"
-                    className={cn(
-                      "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
-                      isLink && "text-primary underline-offset-2 hover:underline"
-                    )}
-                  >
-                    {item.content}
-                  </p>
-                )}
-              </CollapsibleContent>
-            </div>
+/** Note content: collapsible preview/full/edit branches and the meta row. */
+function ItemBody({
+  item,
+  canCollapse,
+  collapseEnabled,
+  previewStyle,
+  isLink,
+  editing,
+  editField,
+  expanded,
+  setExpanded,
+  previewRef,
+  hoverActions,
+}: {
+  item: Item;
+  canCollapse: boolean;
+  collapseEnabled: boolean;
+  previewStyle: { WebkitLineClamp: number } | undefined;
+  isLink: boolean;
+  editing: boolean;
+  editField: React.ReactNode;
+  expanded: boolean;
+  setExpanded: (value: boolean | ((current: boolean) => boolean)) => void;
+  previewRef: React.RefObject<HTMLParagraphElement | null>;
+  hoverActions: React.ReactNode;
+}) {
+  // Editing (local or store-requested) always shows the full note.
+  const open = expanded || editing;
 
-            <div className="mt-2 flex min-h-6 items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <p className="text-[11px] text-muted-foreground/70">
-                  {formatRelative(item.createdAt)}
-                </p>
-                <CollapsibleTrigger asChild>
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="ghost"
-                    className="h-5 px-1.5 text-[11px] text-muted-foreground"
-                  >
-                    {expanded ? (
-                      <ChevronUp data-icon="inline-start" />
-                    ) : (
-                      <ChevronDown data-icon="inline-start" />
-                    )}
-                    {expanded ? "Show less" : "Show more"}
-                  </Button>
-                </CollapsibleTrigger>
-              </div>
-              {hoverActions}
-            </div>
-          </Collapsible>
-        ) : editing ? (
-          editField
-        ) : (
-          <p
-            ref={previewRef}
-            dir="auto"
-            style={previewStyle}
-            className={cn(
-              "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
-              collapseEnabled && "overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical]",
-              isLink && "text-primary underline-offset-2 hover:underline"
-            )}
-          >
-            {item.content}
+  return (
+    <div className="min-w-0 flex-1">
+      {canCollapse ? (
+        <CollapsibleItemBody
+          item={item}
+          open={open}
+          editing={editing}
+          editField={editField}
+          setExpanded={setExpanded}
+          previewStyle={previewStyle}
+          isLink={isLink}
+          previewRef={previewRef}
+          hoverActions={hoverActions}
+        />
+      ) : editing ? (
+        editField
+      ) : (
+        <p
+          ref={previewRef}
+          dir="auto"
+          style={previewStyle}
+          className={cn(
+            "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
+            collapseEnabled && "overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical]",
+            isLink && "text-primary underline-offset-2 hover:underline"
+          )}
+        >
+          {item.content}
+        </p>
+      )}
+      {!canCollapse ? (
+        <div className="mt-2 flex min-h-6 items-center justify-between gap-2">
+          <p className="text-[11px] text-muted-foreground/70">
+            {formatRelative(item.createdAt)}
           </p>
-        )}
-        {!canCollapse ? (
-          <div className="mt-2 flex min-h-6 items-center justify-between gap-2">
-            <p className="text-[11px] text-muted-foreground/70">
-              {formatRelative(item.createdAt)}
-            </p>
-            {hoverActions}
-          </div>
-        ) : null}
-      </div>
+          {hoverActions}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+/** The collapsible preview/full/edit layout for rows over the line limit. */
+function CollapsibleItemBody({
+  item,
+  open,
+  editing,
+  editField,
+  setExpanded,
+  previewStyle,
+  isLink,
+  previewRef,
+  hoverActions,
+}: {
+  item: Item;
+  open: boolean;
+  editing: boolean;
+  editField: React.ReactNode;
+  setExpanded: (value: boolean | ((current: boolean) => boolean)) => void;
+  previewStyle: { WebkitLineClamp: number } | undefined;
+  isLink: boolean;
+  previewRef: React.RefObject<HTMLParagraphElement | null>;
+  hoverActions: React.ReactNode;
+}) {
+  return (
+    <Collapsible open={open} onOpenChange={setExpanded}>
+      <div className="grid min-w-0">
+        <p
+          ref={previewRef}
+          dir="auto"
+          aria-hidden={open}
+          style={previewStyle}
+          className={cn(
+            "col-start-1 row-start-1 self-start overflow-hidden whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [overflow-wrap:anywhere] transition-opacity duration-150",
+            open && "pointer-events-none opacity-0",
+            isLink && "text-primary underline-offset-2 hover:underline"
+          )}
+        >
+          {item.content}
+        </p>
+
+        <CollapsibleContent
+          aria-hidden={!open}
+          className="col-start-1 row-start-1 min-h-0 min-w-0 self-start overflow-hidden data-[state=closed]:pointer-events-none data-[state=closed]:animate-[pocket-collapsible-up_180ms_ease-in] data-[state=open]:animate-[pocket-collapsible-down_220ms_ease-out] motion-reduce:animate-none"
+        >
+          {editing ? (
+            editField
+          ) : (
+            <p
+              dir="auto"
+              className={cn(
+                "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
+                isLink && "text-primary underline-offset-2 hover:underline"
+              )}
+            >
+              {item.content}
+            </p>
+          )}
+        </CollapsibleContent>
+      </div>
+
+      <div className="mt-2 flex min-h-6 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <p className="text-[11px] text-muted-foreground/70">
+            {formatRelative(item.createdAt)}
+          </p>
+          {!editing ? (
+            <CollapsibleTrigger asChild>
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                className="h-5 px-1.5 text-[11px] text-muted-foreground"
+              >
+                {open ? (
+                  <ChevronUp data-icon="inline-start" />
+                ) : (
+                  <ChevronDown data-icon="inline-start" />
+                )}
+                {open ? "Show less" : "Show more"}
+              </Button>
+            </CollapsibleTrigger>
+          ) : null}
+        </div>
+        {hoverActions}
+      </div>
+    </Collapsible>
   );
 }
 

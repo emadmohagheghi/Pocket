@@ -1,4 +1,12 @@
 allowBuilds:
   esbuild: true
+# 1 day: delay installs of freshly published versions so malware that gets
+# pulled within hours can't land here. The lockfile contains toolchain
+# packages published within the last ~2 days, so 7 days would reject it.
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - tailwind-merge@3.7.0
+trustPolicy: no-downgrade
+blockExoticSubdeps: true
+trustPolicyExclude:
+  - semver@6.3.1

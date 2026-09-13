@@ -230,23 +230,12 @@ export default function QuickCaptureWindow() {
       }}
     >
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2 text-[13px] font-medium">
-            <span
-              className={cn(
-                "size-2 shrink-0 rounded-full",
-                recorder.recording ? "animate-pulse bg-red-500" : "bg-muted-foreground/40"
-              )}
-            />
-            <span className="shrink-0">
-              {savedFlash ? "Saved" : recorder.recording ? "Recording…" : "Voice note"}
-            </span>
-            <span className="truncate text-muted-foreground">→ {activeWs?.name ?? "…"}</span>
-          </div>
-          <span className="shrink-0 font-mono text-sm tabular-nums text-muted-foreground">
-            {formatDuration(recorder.elapsedMs)}
-          </span>
-        </div>
+        <QcStatusHeader
+          savedFlash={savedFlash}
+          recording={recorder.recording}
+          elapsedMs={recorder.elapsedMs}
+          workspaceName={activeWs?.name ?? "…"}
+        />
 
         {recorder.error ? (
           <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -254,56 +243,19 @@ export default function QuickCaptureWindow() {
           </p>
         ) : null}
 
-        <div className="flex items-center gap-2">
-          {savedFlash ? (
-            <div className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-500/10 text-[13px] font-medium text-emerald-600">
-              <Check className="size-4" /> Saved
-            </div>
-          ) : recorder.recording ? (
-            <>
-              <button
-                type="button"
-                onClick={() => void stopAndSave()}
-                className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-red-500 text-[13px] font-medium text-white transition-colors hover:bg-red-600"
-              >
-                <Square className="size-3.5 fill-current" /> Stop &amp; save
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  playPocketSound("close");
-                  void hideWindow();
-                }}
-                className="h-9 rounded-lg border px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  playPocketSound("open");
-                  void recorder.start();
-                }}
-                className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-primary text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                <AudioLines className="size-4" /> Start recording
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  playPocketSound("close");
-                  void hideWindow();
-                }}
-                className="h-9 rounded-lg border px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent"
-              >
-                Cancel
-              </button>
-            </>
-          )}
-        </div>
+        <QcControls
+          savedFlash={savedFlash}
+          recording={recorder.recording}
+          onStart={() => {
+            playPocketSound("open");
+            void recorder.start();
+          }}
+          onStopSave={() => void stopAndSave()}
+          onCancel={() => {
+            playPocketSound("close");
+            void hideWindow();
+          }}
+        />
       </div>
 
       <NebulaOrb
@@ -316,6 +268,98 @@ export default function QuickCaptureWindow() {
         aria-hidden
         className={cn("shrink-0 transition-opacity", !recorder.recording && "opacity-60")}
       />
+    </div>
+  );
+}
+
+/** Status row: recording dot, state label, target workspace, elapsed time. */
+function QcStatusHeader({
+  savedFlash,
+  recording,
+  elapsedMs,
+  workspaceName,
+}: {
+  savedFlash: boolean;
+  recording: boolean;
+  elapsedMs: number;
+  workspaceName: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-2 text-[13px] font-medium">
+        <span
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            recording ? "animate-pulse bg-red-500" : "bg-muted-foreground/40"
+          )}
+        />
+        <span className="shrink-0">
+          {savedFlash ? "Saved" : recording ? "Recording…" : "Voice note"}
+        </span>
+        <span className="truncate text-muted-foreground">→ {workspaceName}</span>
+      </div>
+      <span className="shrink-0 font-mono text-sm tabular-nums text-muted-foreground">
+        {formatDuration(elapsedMs)}
+      </span>
+    </div>
+  );
+}
+
+/** Action row: saved confirmation, stop/cancel while recording, start/cancel idle. */
+function QcControls({
+  savedFlash,
+  recording,
+  onStart,
+  onStopSave,
+  onCancel,
+}: {
+  savedFlash: boolean;
+  recording: boolean;
+  onStart: () => void;
+  onStopSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      {savedFlash ? (
+        <div className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-500/10 text-[13px] font-medium text-emerald-600">
+          <Check className="size-4" /> Saved
+        </div>
+      ) : recording ? (
+        <>
+          <button
+            type="button"
+            onClick={onStopSave}
+            className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-red-500 text-[13px] font-medium text-white transition-colors hover:bg-red-600"
+          >
+            <Square className="size-3.5 fill-current" /> Stop &amp; save
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-9 rounded-lg border px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent"
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={onStart}
+            className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-primary text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <AudioLines className="size-4" /> Start recording
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-9 rounded-lg border px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent"
+          >
+            Cancel
+          </button>
+        </>
+      )}
     </div>
   );
 }
