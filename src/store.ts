@@ -73,9 +73,6 @@ interface PocketStore {
   setSettings: (patch: Partial<Settings>) => Promise<void>;
 }
 
-export const activeWorkspaceId = (s: PocketStore): string =>
-  s.settings?.activeWorkspaceId ?? "";
-
 // React StrictMode intentionally remounts effects in development. Keep app
 // initialization process-wide so listeners and initial reads only run once.
 let initPromise: Promise<void> | null = null;
@@ -122,12 +119,19 @@ export const usePocket = create<PocketStore>((set, get) => ({
         ]);
 
         const initial = await api.getState();
-        set({
-          settings: initial.settings,
-          workspaces: initial.workspaces,
-        });
+        // A state-changed event may land while getState is still in flight
+        // (listeners are registered first on purpose). Seeding unconditionally
+        // would clobber that newer payload with the older snapshot, so only
+        // seed when no event got here first.
+        if (!get().settings) {
+          set({
+            settings: initial.settings,
+            workspaces: initial.workspaces,
+          });
+        }
         await get().refreshItems();
       } catch (e) {
+        void api.log(`init FAILED: ${errMessage(e)}`);
       } finally {
         set({ ready: true });
       }
@@ -153,6 +157,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
       const data = await api.getItems(wsId);
       set({ data });
     } catch (e) {
+      void api.log(`refreshItems FAILED: ${errMessage(e)}`);
     }
   },
 
@@ -162,6 +167,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
       set((s) => ({ workspaces: [...s.workspaces, ws] }));
       return ws;
     } catch (e) {
+      void api.log(`createWorkspace FAILED: ${errMessage(e)}`);
       return null;
     }
   },
@@ -173,6 +179,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
         workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, name: ws.name } : w)),
       }));
     } catch (e) {
+      void api.log(`renameWorkspace FAILED: ${errMessage(e)}`);
     }
   },
 
@@ -191,6 +198,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
       await api.setActiveWorkspace(id);
       // The state-changed event refreshes everything else.
     } catch (e) {
+      void api.log(`setActiveWorkspace FAILED: ${errMessage(e)}`);
     }
   },
 
@@ -201,6 +209,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
       const item = await api.createItem(wsId, { itemType: "text", content });
       return item;
     } catch (e) {
+      void api.log(`createItem FAILED: ${errMessage(e)}`);
       return null;
     }
   },
@@ -211,6 +220,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
     try {
       await api.updateItem(wsId, itemId, patch as Record<string, unknown>);
     } catch (e) {
+      void api.log(`updateItem FAILED: ${errMessage(e)}`);
     }
   },
 
@@ -220,6 +230,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
     try {
       await api.deleteItem(wsId, itemId);
     } catch (e) {
+      void api.log(`deleteItem FAILED: ${errMessage(e)}`);
     }
   },
 
@@ -229,6 +240,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
     try {
       await api.setPinned(wsId, kind, entryId, pinned);
     } catch (e) {
+      void api.log(`setEntryPinned FAILED: ${errMessage(e)}`);
     }
   },
 
@@ -238,6 +250,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
     try {
       await api.renameRecording(wsId, recordingId, name);
     } catch (e) {
+      void api.log(`renameRecording FAILED: ${errMessage(e)}`);
     }
   },
 
@@ -247,6 +260,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
     try {
       await api.deleteRecording(wsId, recordingId);
     } catch (e) {
+      void api.log(`deleteRecording FAILED: ${errMessage(e)}`);
     }
   },
 
@@ -255,6 +269,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
       const settings = await api.updateSettings(patch);
       set((s) => ({ settings: s.settings ? { ...s.settings, ...settings } : settings }));
     } catch (e) {
+      void api.log(`setSettings FAILED: ${errMessage(e)}`);
     }
   },
 

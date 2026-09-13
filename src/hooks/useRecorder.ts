@@ -60,6 +60,10 @@ export function useRecorder() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     recorderRef.current = null;
+    // Recorded audio is materialized into a Blob before cleanup in onstop;
+    // dropping the chunks here frees the last take instead of pinning it
+    // in memory until the next start().
+    chunksRef.current = [];
     startingRef.current = false;
     activeMsRef.current = 0;
     segmentStartRef.current = 0;
@@ -196,7 +200,12 @@ export function useRecorder() {
   const cancel = useCallback(() => {
     startRequestRef.current += 1;
     const mr = recorderRef.current;
+    // A pending stop() must not dangle: resolve it now (null = discard) so a
+    // cancel landing between stop() and MediaRecorder's async onstop cannot
+    // leave the caller awaiting forever with a stuck "saving" state.
+    const pendingStop = stopResolverRef.current;
     stopResolverRef.current = null;
+    pendingStop?.(null);
     if (mr && mr.state !== "inactive") {
       mr.onstop = () => {
         cleanup();

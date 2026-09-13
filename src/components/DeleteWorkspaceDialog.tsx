@@ -27,7 +27,9 @@ interface Props {
 }
 
 export function DeleteWorkspaceDialog({ workspaceId, onClose }: Props) {
-  const { workspaces, deleteWorkspace, settings } = usePocket();
+  const workspaces = usePocket((s) => s.workspaces);
+  const deleteWorkspace = usePocket((s) => s.deleteWorkspace);
+  const activeWorkspaceId = usePocket((s) => s.settings?.activeWorkspaceId);
   const [counts, setCounts] = useState<Counts | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -38,10 +40,20 @@ export function DeleteWorkspaceDialog({ workspaceId, onClose }: Props) {
       setCounts(null);
       return;
     }
+    // Guard against a slow response for an earlier workspace landing after a
+    // newer one and showing the wrong counts.
+    let cancelled = false;
     void api
       .getWorkspaceCounts(workspaceId)
-      .then(setCounts)
-      .catch(() => setCounts(null));
+      .then((c) => {
+        if (!cancelled) setCounts(c);
+      })
+      .catch(() => {
+        if (!cancelled) setCounts(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [workspaceId]);
 
   const rows = counts
@@ -81,7 +93,7 @@ export function DeleteWorkspaceDialog({ workspaceId, onClose }: Props) {
                 <p className="text-muted-foreground">Could not load workspace contents.</p>
               )}
               <p>All of this data — including voice files on disk — will be permanently deleted.</p>
-              {workspaceId === settings?.activeWorkspaceId && (
+              {workspaceId === activeWorkspaceId && (
                 <p className="text-xs text-muted-foreground">
                   Captures will switch to another workspace afterwards.
                 </p>
