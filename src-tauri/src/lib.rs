@@ -48,6 +48,10 @@ pub fn run() {
             let start_minimized = store.settings.start_minimized;
             app.manage(Mutex::new(store));
 
+            // Restore the persisted always-on-top preference. Applied from
+            // setup so the window is pinned before it is ever revealed.
+            commands::apply_always_on_top(&handle);
+
             // The frontend normally reveals the initialized window. Keep a
             // backend fail-safe so a missed ready event cannot strand a normal
             // launch in the tray forever.

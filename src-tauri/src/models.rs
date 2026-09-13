@@ -75,6 +75,8 @@ pub struct Settings {
     pub start_minimized: bool,
     pub active_workspace_id: String,
     pub gaming_detection_enabled: bool,
+    /// Keep the main window above all other windows.
+    pub always_on_top: bool,
     pub theme: String,
     pub note_preview_lines: u8,
 }
@@ -86,6 +88,7 @@ impl Default for Settings {
             start_minimized: false,
             active_workspace_id: String::new(),
             gaming_detection_enabled: false,
+            always_on_top: false,
             theme: "system".into(),
             note_preview_lines: 5,
         }
@@ -98,6 +101,7 @@ pub struct SettingsPatch {
     pub launch_on_startup: Option<bool>,
     pub start_minimized: Option<bool>,
     pub gaming_detection_enabled: Option<bool>,
+    pub always_on_top: Option<bool>,
     pub theme: Option<String>,
     pub note_preview_lines: Option<u8>,
 }

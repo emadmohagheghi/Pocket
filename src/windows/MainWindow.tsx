@@ -3,6 +3,7 @@ import {
   FolderOpen,
   Layers,
   MoreHorizontal,
+  Pin,
   Settings as SettingsIcon,
   X,
 } from "lucide-react";
@@ -16,6 +17,7 @@ import { SearchBar } from "@/components/SearchBar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
@@ -34,6 +36,7 @@ export default function MainWindow() {
   const init = usePocket((s) => s.init);
   const settings = usePocket((s) => s.settings);
   const gaming = usePocket((s) => s.gaming);
+  const setSettings = usePocket((s) => s.setSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -124,6 +127,17 @@ export default function MainWindow() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuGroup>
+                <DropdownMenuCheckboxItem
+                  checked={settings?.alwaysOnTop ?? false}
+                  onCheckedChange={(checked) =>
+                    void setSettings({ alwaysOnTop: checked === true }).catch(() => {})
+                  }
+                >
+                  <Pin /> Stay on top
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem
                   onClick={() => {
