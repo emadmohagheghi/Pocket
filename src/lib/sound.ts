@@ -8,6 +8,7 @@
  */
 
 import { definePatch, ensureReady, setMasterVolume, type AudioPatch, type SoundPatch } from "@web-kits/audio";
+import { api } from "@/lib/api";
 
 export type PocketSound =
   | "tap"
@@ -153,7 +154,7 @@ try {
   patch = definePatch(PATCH);
 } catch (error) {
   patch = null;
-  void import("@/lib/api").then(({ api }) => api.log(`sound: definePatch FAILED: ${error}`));
+  void api.log(`sound: definePatch FAILED: ${error}`);
 }
 
 function isEnabled(): boolean {
@@ -184,9 +185,7 @@ export function playPocketSound(sound: PocketSound): void {
     .then((ctx) => {
       setMasterVolume(volume());
       if (ctx.state !== "running") {
-        void import("@/lib/api").then(({ api }) =>
-          api.log(`sound: context ${ctx.state} while playing ${sound}`)
-        );
+        void api.log(`sound: context ${ctx.state} while playing ${sound}`);
       }
       patch!.play(sound, {
         detune: (Math.random() * 2 - 1) * JITTER[sound],
@@ -194,7 +193,7 @@ export function playPocketSound(sound: PocketSound): void {
       });
     })
     .catch((error) => {
-      void import("@/lib/api").then(({ api }) => api.log(`sound: play FAILED: ${error}`));
+      void api.log(`sound: play FAILED: ${error}`);
     });
 }
 
