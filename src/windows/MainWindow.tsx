@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ArrowBigUp,
   FolderOpen,
   Layers,
   MoreHorizontal,
@@ -22,6 +23,7 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
@@ -39,7 +41,38 @@ export default function MainWindow() {
   const setSettings = usePocket((s) => s.setSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const alwaysOnTop = settings?.alwaysOnTop ?? false;
+
+  // Overflow-menu actions, shared between the menu items and their
+  // app-focused keyboard shortcuts (Ctrl+Shift+T/W/O/Q, Ctrl+, and
+  // Ctrl+Shift+S for settings).
+  const toggleStayOnTop = useCallback(() => {
+    void setSettings({ alwaysOnTop: !alwaysOnTop }).catch(() => {});
+  }, [alwaysOnTop, setSettings]);
+  const openWorkspaces = useCallback(() => {
+    playPocketSound("open");
+    setWorkspacesOpen(true);
+  }, []);
+  const openSettings = useCallback(() => {
+    playPocketSound("open");
+    setSettingsOpen(true);
+  }, []);
+  const openDataFolder = useCallback(() => {
+    void api.openDataFolder().catch(() => {});
+  }, []);
+  const closeWindow = useCallback(() => {
+    void api.closeWindow().catch(() => {});
+  }, []);
+
+  // "Ctrl+Shift+" prefix rendered with the ⇧ keycap glyph.
+  const modPrefix = (
+    <>
+      Ctrl
+      <ArrowBigUp className="mx-0.5 inline size-3.5 text-muted-foreground" />
+    </>
+  );
 
   useEffect(() => {
     void init()
@@ -97,6 +130,30 @@ export default function MainWindow() {
         e.preventDefault();
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
+      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === "," || e.code === "Comma")) {
+        // Ctrl+, — Settings (VS Code convention).
+        e.preventDefault();
+        openSettings();
+      } else if (e.ctrlKey && e.shiftKey && !e.altKey) {
+        // Overflow-menu shortcuts — same actions as the three-dot items,
+        // available whenever the app window itself has keyboard focus.
+        const key = e.key.toLowerCase();
+        if (key === "t") {
+          e.preventDefault();
+          toggleStayOnTop();
+        } else if (key === "w") {
+          e.preventDefault();
+          openWorkspaces();
+        } else if (key === "s") {
+          e.preventDefault();
+          openSettings();
+        } else if (key === "o") {
+          e.preventDefault();
+          openDataFolder();
+        } else if (key === "q") {
+          e.preventDefault();
+          closeWindow();
+        }
       } else if (e.key === "Escape" && !typing) {
         setSettingsOpen(false);
         setWorkspacesOpen(false);
@@ -104,7 +161,7 @@ export default function MainWindow() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [toggleStayOnTop, openWorkspaces, openSettings, openDataFolder, closeWindow]);
 
   return (
     <div className="relative h-screen bg-transparent p-3">
@@ -115,7 +172,7 @@ export default function MainWindow() {
         {/* Top bar: search + overflow menu. */}
         <div className="flex items-center gap-2 px-3 pb-0">
           <SearchBar inputRef={searchInputRef} />
-          <DropdownMenu>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button
                 size="icon"
@@ -129,52 +186,48 @@ export default function MainWindow() {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuGroup>
                 <DropdownMenuCheckboxItem
-                  checked={settings?.alwaysOnTop ?? false}
+                  checked={alwaysOnTop}
                   onCheckedChange={(checked) =>
                     void setSettings({ alwaysOnTop: checked === true }).catch(() => {})
                   }
                 >
                   <Pin /> Stay on top
+                  <DropdownMenuShortcut>{modPrefix}+T</DropdownMenuShortcut>
                 </DropdownMenuCheckboxItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem
-                  onClick={() => {
-                    playPocketSound("open");
-                    setWorkspacesOpen(true);
-                  }}
+                  onClick={openWorkspaces}
                 >
                   <Layers /> Workspaces
+                  <DropdownMenuShortcut>{modPrefix}+W</DropdownMenuShortcut>
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => {
-                    playPocketSound("open");
-                    setSettingsOpen(true);
-                  }}
+                  onClick={openSettings}
                 >
                   <SettingsIcon /> Settings
+                  <DropdownMenuShortcut>Ctrl+,</DropdownMenuShortcut>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem
                   className="whitespace-nowrap"
-                  onClick={() =>
-                    void api.openDataFolder().catch(() => {})
-                  }
+                  onClick={openDataFolder}
                 >
                   <FolderOpen /> Open data folder
+                  <DropdownMenuShortcut>{modPrefix}+O</DropdownMenuShortcut>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem
-                onClick={() =>
-                  void api.closeWindow().catch(() => {})
-                }
+                  className="whitespace-nowrap"
+                  onClick={closeWindow}
                 >
                   <X /> Close Window
+                  <DropdownMenuShortcut>{modPrefix}+Q</DropdownMenuShortcut>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
             </DropdownMenuContent>
