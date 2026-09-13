@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 
@@ -29,9 +29,19 @@ export const useQc = create<QcStore>((set) => ({
 let wired = false;
 
 export function useQcEvents(onCaptureOpen: (mode: CaptureOpenMode) => void) {
+  // Latest-callback ref: the capture-open listener below subscribes exactly
+  // once and always invokes the most recent render's callback, so callers can
+  // pass an inline closure without effect-dependency churn.
+  const handlerRef = useRef(onCaptureOpen);
+  useEffect(() => {
+    handlerRef.current = onCaptureOpen;
+  });
+
   useEffect(() => {
     if (!wired) {
       wired = true;
+      // Process-wide: the quick-capture window lives for the whole app
+      // session, so this listener is intentionally never unlistened.
       void listen<{ settings: Settings; workspaces: WorkspaceInfo[] }>(
         "state-changed",
         (e) => useQc.setState(e.payload)
@@ -42,12 +52,11 @@ export function useQcEvents(onCaptureOpen: (mode: CaptureOpenMode) => void) {
       "capture-open",
       (e) => {
         void api.log(`QC received capture-open mode=${e.payload.mode}`);
-        onCaptureOpen(e.payload.mode);
+        handlerRef.current(e.payload.mode);
       }
     );
     return () => {
       void unlistenP.then((f) => f());
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }

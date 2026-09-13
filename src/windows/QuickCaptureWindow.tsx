@@ -25,7 +25,6 @@ export default function QuickCaptureWindow() {
   /** The delayed hide after a save; must be cancelled if the panel is
    * reopened within the flash window, or it kills the fresh session. */
   const flashHideTimerRef = useRef<number | null>(null);
-  recorderRecordingRef.current = recorder.recording;
 
   useEffect(() => {
     if (settings) applyTheme(settings.theme);
@@ -177,8 +176,6 @@ export default function QuickCaptureWindow() {
     }
   };
 
-  stopAndSaveRef.current = stopAndSave;
-
   const finishAutomaticVoice = useCallback(() => {
     const saveRequested =
       leftVoiceStopRequestedRef.current ||
@@ -193,7 +190,16 @@ export default function QuickCaptureWindow() {
     automaticVoiceSaveStartedRef.current = true;
     void stopAndSaveRef.current();
   }, []);
-  finishAutomaticVoiceRef.current = finishAutomaticVoice;
+
+  // "Latest" refs are synced after commit, not during render: writing refs
+  // while rendering breaks under StrictMode's double renders. Declared here,
+  // before the effects below read them, so they always see this commit's
+  // closures.
+  useEffect(() => {
+    recorderRecordingRef.current = recorder.recording;
+    stopAndSaveRef.current = stopAndSave;
+    finishAutomaticVoiceRef.current = finishAutomaticVoice;
+  });
 
   // Right Shift can be released while getUserMedia is still resolving. Keep
   // the request and finish as soon as MediaRecorder reports live.
