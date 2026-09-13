@@ -23,8 +23,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
+import { listen } from "@tauri-apps/api/event";
+import { Toaster } from "@/components/ui/toast";
 import { applyTheme } from "@/lib/theme";
-import { playPocketSound } from "@/lib/sound";
+import { playPocketSound, unlockPocketAudio } from "@/lib/sound";
 
 export default function MainWindow() {
   // Field selectors: keeps this window (and everything subscribed below it)
@@ -51,6 +53,37 @@ export default function MainWindow() {
     document.body.style.background = "transparent";
   }, []);
 
+  // Keep the shared AudioContext armed so hotkey-triggered cues (record
+  // start/stop from a Shift+Shift hold while Pocket was unfocused) sound.
+  useEffect(() => {
+    void unlockPocketAudio();
+    const arm = () => void unlockPocketAudio();
+    window.addEventListener("focus", arm);
+    window.addEventListener("pointerdown", arm);
+    window.addEventListener("keydown", arm);
+    return () => {
+      window.removeEventListener("focus", arm);
+      window.removeEventListener("pointerdown", arm);
+      window.removeEventListener("keydown", arm);
+    };
+  }, []);
+
+  // Double-shift hold (native hook) drives the in-app recorder: bridge the
+  // backend events onto window events the AddBar listens for.
+  useEffect(() => {
+    const unlisten = [
+      listen("voice-hold-start", () =>
+        window.dispatchEvent(new Event("pocket-voice-hold-start"))
+      ),
+      listen("voice-hold-release", () =>
+        window.dispatchEvent(new Event("pocket-voice-hold-stop"))
+      ),
+    ];
+    return () => {
+      void Promise.all(unlisten).then((uns) => uns.forEach((u) => u()));
+    };
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -72,19 +105,19 @@ export default function MainWindow() {
 
   return (
     <div className="relative h-screen bg-transparent p-3">
-      <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-background">
+      <div className="flex h-full flex-col overflow-hidden rounded-[36px] border border-border/60 bg-background">
         {/* Dedicated drag strips: the window is only draggable from these
             empty areas, never from content. */}
-        <div data-tauri-drag-region className="h-5 w-full shrink-0" aria-hidden />
+        <div data-tauri-drag-region className="h-3 w-full shrink-0" aria-hidden />
         {/* Top bar: search + overflow menu. */}
-        <div className="flex items-center gap-2 px-4 pb-0">
+        <div className="flex items-center gap-2 px-3 pb-0">
           <SearchBar inputRef={searchInputRef} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-10 shrink-0 text-muted-foreground hover:text-foreground"
+                className="size-10 shrink-0 rounded-[24px] border border-border/60 bg-card text-muted-foreground hover:bg-card! hover:text-muted-foreground active:bg-card! aria-expanded:bg-card! aria-expanded:text-muted-foreground!"
                 aria-label="More options"
               >
                 <MoreHorizontal />
@@ -151,14 +184,15 @@ export default function MainWindow() {
 
         {/* Invisible audio engine; playback UI lives in the voice rows. */}
         <VoicePlayerEngine />
-        <div className="shrink-0 px-4 pb-4 pt-3">
+        <div className="shrink-0 px-3 pb-0 pt-3">
           <AddBar />
-          <div data-tauri-drag-region className="h-2 w-full" aria-hidden />
+          <div data-tauri-drag-region className="h-3 w-full" aria-hidden />
         </div>
       </div>
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <WorkspacesDialog open={workspacesOpen} onClose={() => setWorkspacesOpen(false)} />
+      <Toaster />
     </div>
   );
 }
