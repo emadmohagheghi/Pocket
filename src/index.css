@@ -67,24 +67,26 @@
 }
 
 .dark {
-    --background: #141414;
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.235 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.235 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.3 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.3 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.3 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 12%);
-    --input: oklch(1 0 0 / 16%);
-    --ring: oklch(0.556 0 0);
+    /* macOS dark palette: near-black window (#1e1e1e), elevated cards
+       (#28282a), system blue accent, translucent separators. */
+    --background: #1e1e1e;
+    --foreground: #f5f5f7;
+    --card: #28282a;
+    --card-foreground: #f5f5f7;
+    --popover: #2c2c2e;
+    --popover-foreground: #f5f5f7;
+    --primary: #0a84ff;
+    --primary-foreground: #ffffff;
+    --secondary: #323234;
+    --secondary-foreground: #f5f5f7;
+    --muted: #323234;
+    --muted-foreground: #98989d;
+    --accent: #3a3a3c;
+    --accent-foreground: #f5f5f7;
+    --destructive: #ff453a;
+    --border: rgb(255 255 255 / 14%);
+    --input: rgb(255 255 255 / 18%);
+    --ring: #0a84ff;
 }
 
 @layer base {

@@ -11,115 +11,75 @@ import { ItemRow } from "@/components/ItemRow";
 import { VoiceRow } from "@/components/VoiceList";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-
-/** Small uppercase muted section label. */
-export function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="px-1 pb-1 pt-6 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70 first:pt-0">
-      {children}
-    </p>
-  );
-}
-
-function groupLabel(createdAt: number): string {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  if (createdAt >= startOfToday) return "Today";
-  if (createdAt >= startOfToday - 86400000) return "Yesterday";
-  return "Earlier";
-}
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
 
 type FeedEntry =
-  | { key: string; createdAt: number; kind: "text"; item: Item }
-  | { key: string; createdAt: number; kind: "voice"; recording: Recording };
+  | { key: string; kind: "text"; item: Item }
+  | { key: string; kind: "voice"; recording: Recording };
 
 const CAPTURE_BAR_CLASS =
   "flex items-center gap-2.5 rounded-full border border-border/60 bg-card px-3.5 py-2 transition-colors focus-within:border-border";
 
-/** Single unified feed: text items and voice recordings together, newest first. */
+/**
+ * Single unified feed: text items and voice recordings together, oldest at
+ * the top and newest at the bottom like a chat. Auto-scrolls while the
+ * reader is at the live edge; a jump-to-latest button appears otherwise.
+ */
 export function ItemList() {
   const data = usePocket((s) => s.data);
   const focusItemId = usePocket((s) => s.focusItemId);
 
-  const items = useMemo<Item[]>(() => data?.items ?? [], [data]);
-
-  const { pinnedEntries, groups } = useMemo(() => {
-    const entries: FeedEntry[] = [
-      ...items.map(
-        (item): FeedEntry => ({
-          key: item.id,
-          createdAt: item.createdAt,
-          kind: "text",
-          item,
-        })
+  const entries = useMemo<FeedEntry[]>(() => {
+    return [
+      ...(data?.items ?? []).map(
+        (item): FeedEntry => ({ key: item.id, kind: "text", item })
       ),
       ...(data?.recordings ?? []).map(
         (recording): FeedEntry => ({
           key: recording.id,
-          createdAt: recording.createdAt,
           kind: "voice",
           recording,
         })
       ),
-    ].sort((a, b) => b.createdAt - a.createdAt);
-    const pinnedEntries = entries.filter((entry) =>
-      entry.kind === "text" ? entry.item.pinned : entry.recording.pinned
-    );
-    const chronologicalEntries = entries.filter((entry) =>
-      entry.kind === "text" ? !entry.item.pinned : !entry.recording.pinned
-    );
-    const order = ["Today", "Yesterday", "Earlier"];
-    const map = new Map<string, FeedEntry[]>();
-    for (const entry of chronologicalEntries) {
-      const label = groupLabel(entry.createdAt);
-      if (!map.has(label)) map.set(label, []);
-      map.get(label)!.push(entry);
-    }
-    return {
-      pinnedEntries,
-      groups: order
-        .filter((label) => map.has(label))
-        .map((label) => ({ label, entries: map.get(label)! })),
-    };
-  }, [items, data]);
+    ].sort((a, b) => {
+      const aCreated = a.kind === "text" ? a.item.createdAt : a.recording.createdAt;
+      const bCreated = b.kind === "text" ? b.item.createdAt : b.recording.createdAt;
+      return aCreated - bCreated;
+    });
+  }, [data]);
 
-  const total = pinnedEntries.length + groups.reduce((n, g) => n + g.entries.length, 0);
-  if (!data || total === 0) return null;
-
-  const renderEntry = (entry: FeedEntry) =>
-    entry.kind === "text" ? (
-      <ItemRow
-        key={entry.key}
-        item={entry.item}
-        focused={entry.item.id === focusItemId}
-      />
-    ) : (
-      <VoiceRow
-        key={entry.key}
-        recording={entry.recording}
-        focused={entry.recording.id === focusItemId}
-      />
-    );
+  if (!data || entries.length === 0) return null;
 
   return (
-    <div className="px-1 pt-1">
-      {pinnedEntries.length > 0 ? (
-        <section>
-          <SectionLabel>Pinned</SectionLabel>
-          <ul className="space-y-2">
-            {pinnedEntries.map(renderEntry)}
-          </ul>
-        </section>
-      ) : null}
-
-      {groups.map(({ label, entries }) => (
-        <section key={label}>
-          <SectionLabel>{label}</SectionLabel>
-          <ul className="space-y-2">
-            {entries.map(renderEntry)}
-          </ul>
-        </section>
-      ))}
+    <div className="flex h-full min-h-0 flex-col">
+      <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+        <MessageScroller>
+          <MessageScrollerViewport>
+            <MessageScrollerContent className="px-1 py-2">
+              {entries.map((entry) => (
+                <MessageScrollerItem key={entry.key} messageId={entry.key}>
+                  {entry.kind === "text" ? (
+                    <ItemRow item={entry.item} focused={entry.item.id === focusItemId} />
+                  ) : (
+                    <VoiceRow
+                      recording={entry.recording}
+                      focused={entry.recording.id === focusItemId}
+                    />
+                  )}
+                </MessageScrollerItem>
+              ))}
+            </MessageScrollerContent>
+          </MessageScrollerViewport>
+          <MessageScrollerButton />
+        </MessageScroller>
+      </MessageScrollerProvider>
     </div>
   );
 }

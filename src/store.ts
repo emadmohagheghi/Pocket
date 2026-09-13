@@ -65,7 +65,6 @@ interface PocketStore {
   createItem: (content: string) => Promise<Item | null>;
   updateItem: (itemId: string, patch: Partial<Item>) => Promise<void>;
   deleteItem: (itemId: string) => Promise<void>;
-  setEntryPinned: (kind: EntryKind, entryId: string, pinned: boolean) => Promise<void>;
 
   renameRecording: (recordingId: string, name: string) => Promise<void>;
   deleteRecording: (recordingId: string) => Promise<void>;
@@ -231,16 +230,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
       await api.deleteItem(wsId, itemId);
     } catch (e) {
       void api.log(`deleteItem FAILED: ${errMessage(e)}`);
-    }
-  },
-
-  setEntryPinned: async (kind, entryId, pinned) => {
-    const wsId = get().settings?.activeWorkspaceId;
-    if (!wsId) return;
-    try {
-      await api.setPinned(wsId, kind, entryId, pinned);
-    } catch (e) {
-      void api.log(`setEntryPinned FAILED: ${errMessage(e)}`);
     }
   },
 

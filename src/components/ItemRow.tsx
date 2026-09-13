@@ -10,16 +10,22 @@ import {
 
 import { usePocket } from "@/store";
 import { api } from "@/lib/api";
-import { cn, formatRelative, looksLikeUrl } from "@/lib/utils";
+import { cn, looksLikeUrl } from "@/lib/utils";
 import { playPocketSound } from "@/lib/sound";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
-import { PinButton } from "@/components/PinButton";
 import type { Item } from "@/types";
 
 interface Props {
@@ -32,7 +38,6 @@ export function ItemRow({ item, focused }: Props) {
   // as voice-player progress while a recording plays.
   const updateItem = usePocket((s) => s.updateItem);
   const deleteItem = usePocket((s) => s.deleteItem);
-  const setEntryPinned = usePocket((s) => s.setEntryPinned);
   const clearEditRequest = usePocket((s) => s.clearEditRequest);
   const editRequest = usePocket((s) => s.editRequest);
   const previewLineLimit = usePocket((s) => s.settings?.notePreviewLines ?? 5);
@@ -145,8 +150,6 @@ export function ItemRow({ item, focused }: Props) {
     endEditing();
   };
 
-  const togglePin = () => void setEntryPinned("text", item.id, !item.pinned);
-
   const onKeyDownRow = (e: React.KeyboardEvent) => {
     if (
       editing ||
@@ -188,61 +191,62 @@ export function ItemRow({ item, focused }: Props) {
     />
   );
 
-  const hoverActions = (
-    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-      <PinButton pinned={item.pinned} onToggle={togglePin} />
+  const deleteEntry = () => {
+    playPocketSound("destructive");
+    void deleteItem(item.id);
+  };
+
+  const contextMenu = (
+    <ContextMenuContent>
       {isLink ? (
-        <RowButton
-          label="Open in browser"
-          icon={<ExternalLink />}
-          onClick={() => void api.openUrl(linkTarget).catch(() => {})}
-        />
+        <ContextMenuItem onSelect={() => void api.openUrl(linkTarget).catch(() => {})}>
+          <ExternalLink /> Open in browser
+        </ContextMenuItem>
       ) : null}
-      <RowButton label="Copy" icon={<Copy />} onClick={() => void copy()} />
-      <RowButton
-        label="Edit"
-        icon={<Pencil />}
-        onClick={() => setLocalEditing(true)}
-      />
-      <RowButton
-        label="Delete"
-        icon={<Trash2 />}
-        destructive
-        onClick={() => {
-          playPocketSound("destructive");
-          void deleteItem(item.id);
-        }}
-      />
-    </div>
+      <ContextMenuItem onSelect={() => void copy()}>
+        <Copy /> Copy
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={() => setLocalEditing(true)}>
+        <Pencil /> Edit
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem variant="destructive" onSelect={deleteEntry}>
+        <Trash2 /> Delete
+      </ContextMenuItem>
+    </ContextMenuContent>
   );
 
   return (
-    <li
-      ref={rowRef}
-      tabIndex={0}
-      data-tauri-drag-region="deep"
-      data-item-id={item.id}
-      onKeyDown={onKeyDownRow}
-      className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-colors hover:border-border"
-    >
-      <ItemBody
-        item={item}
-        canCollapse={canCollapse}
-        collapseEnabled={collapseEnabled}
-        previewStyle={previewStyle}
-        isLink={isLink}
-        editing={editing}
-        editField={editField}
-        expanded={expanded}
-        setExpanded={setExpanded}
-        previewRef={previewRef}
-        hoverActions={hoverActions}
-      />
-    </li>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <li
+          ref={rowRef}
+          tabIndex={0}
+          data-tauri-drag-region="deep"
+          data-item-id={item.id}
+          onKeyDown={onKeyDownRow}
+          className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-colors hover:border-border"
+        >
+          <ItemBody
+            item={item}
+            canCollapse={canCollapse}
+            collapseEnabled={collapseEnabled}
+            previewStyle={previewStyle}
+            isLink={isLink}
+            editing={editing}
+            editField={editField}
+            expanded={expanded}
+            setExpanded={setExpanded}
+            previewRef={previewRef}
+          />
+        </li>
+      </ContextMenuTrigger>
+      {contextMenu}
+    </ContextMenu>
   );
 }
 
-/** Note content: collapsible preview/full/edit branches and the meta row. */
+/** Note content: collapsible preview/full/edit branches. */
 function ItemBody({
   item,
   canCollapse,
@@ -254,7 +258,6 @@ function ItemBody({
   expanded,
   setExpanded,
   previewRef,
-  hoverActions,
 }: {
   item: Item;
   canCollapse: boolean;
@@ -266,7 +269,6 @@ function ItemBody({
   expanded: boolean;
   setExpanded: (value: boolean | ((current: boolean) => boolean)) => void;
   previewRef: React.RefObject<HTMLParagraphElement | null>;
-  hoverActions: React.ReactNode;
 }) {
   // Editing (local or store-requested) always shows the full note.
   const open = expanded || editing;
@@ -283,7 +285,6 @@ function ItemBody({
           previewStyle={previewStyle}
           isLink={isLink}
           previewRef={previewRef}
-          hoverActions={hoverActions}
         />
       ) : editing ? (
         editField
@@ -301,14 +302,6 @@ function ItemBody({
           {item.content}
         </p>
       )}
-      {!canCollapse ? (
-        <div className="mt-2 flex min-h-6 items-center justify-between gap-2">
-          <p className="text-[11px] text-muted-foreground/70">
-            {formatRelative(item.createdAt)}
-          </p>
-          {hoverActions}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -323,7 +316,6 @@ function CollapsibleItemBody({
   previewStyle,
   isLink,
   previewRef,
-  hoverActions,
 }: {
   item: Item;
   open: boolean;
@@ -333,7 +325,6 @@ function CollapsibleItemBody({
   previewStyle: { WebkitLineClamp: number } | undefined;
   isLink: boolean;
   previewRef: React.RefObject<HTMLParagraphElement | null>;
-  hoverActions: React.ReactNode;
 }) {
   return (
     <Collapsible open={open} onOpenChange={setExpanded}>
@@ -372,61 +363,25 @@ function CollapsibleItemBody({
         </CollapsibleContent>
       </div>
 
-      <div className="mt-2 flex min-h-6 items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <p className="text-[11px] text-muted-foreground/70">
-            {formatRelative(item.createdAt)}
-          </p>
-          {!editing ? (
-            <CollapsibleTrigger asChild>
-              <Button
-                type="button"
-                size="xs"
-                variant="ghost"
-                className="h-5 px-1.5 text-[11px] text-muted-foreground"
-              >
-                {open ? (
-                  <ChevronUp data-icon="inline-start" />
-                ) : (
-                  <ChevronDown data-icon="inline-start" />
-                )}
-                {open ? "Show less" : "Show more"}
-              </Button>
-            </CollapsibleTrigger>
-          ) : null}
+      {!editing ? (
+        <div className="mt-2 flex min-h-6 items-center justify-end gap-1.5">
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              className="h-5 px-1.5 text-[11px] text-muted-foreground"
+            >
+              {open ? (
+                <ChevronUp data-icon="inline-start" />
+              ) : (
+                <ChevronDown data-icon="inline-start" />
+              )}
+              {open ? "Show less" : "Show more"}
+            </Button>
+          </CollapsibleTrigger>
         </div>
-        {hoverActions}
-      </div>
+      ) : null}
     </Collapsible>
-  );
-}
-
-function RowButton({
-  label,
-  icon,
-  onClick,
-  destructive,
-  disabled,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-  destructive?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <Button
-      size="icon-sm"
-      variant="ghost"
-      aria-label={label}
-      disabled={disabled}
-      className={cn(
-        "text-muted-foreground hover:text-foreground",
-        destructive && "hover:text-destructive"
-      )}
-      onClick={onClick}
-    >
-      {icon}
-    </Button>
   );
 }

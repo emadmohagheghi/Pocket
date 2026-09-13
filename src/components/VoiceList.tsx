@@ -3,11 +3,17 @@ import { Check, Pause, Pencil, Play, RotateCcw, RotateCw, Square, Trash2 } from 
 
 import { usePocket } from "@/store";
 import { voiceUrl } from "@/lib/api";
-import { formatBytes, formatDuration, formatRelative } from "@/lib/utils";
+import { formatBytes, formatDuration } from "@/lib/utils";
 import { playPocketSound } from "@/lib/sound";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PinButton } from "@/components/PinButton";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import type { Recording } from "@/types";
 
 export function VoiceRow({
@@ -26,7 +32,6 @@ export function VoiceRow({
   const playRecording = usePocket((s) => s.playRecording);
   const togglePlayer = usePocket((s) => s.togglePlayer);
   const stopPlayer = usePocket((s) => s.stopPlayer);
-  const setEntryPinned = usePocket((s) => s.setEntryPinned);
   const editRequest = usePocket((s) => s.editRequest);
   const clearEditRequest = usePocket((s) => s.clearEditRequest);
   const [localRenaming, setLocalRenaming] = useState(false);
@@ -81,95 +86,85 @@ export function VoiceRow({
     clearEditRequest();
   };
 
-  const togglePin = () =>
-    void setEntryPinned("voice", recording.id, !recording.pinned);
-  const hoverActions = (
-    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-      <PinButton pinned={recording.pinned} onToggle={togglePin} />
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        className="text-muted-foreground hover:text-foreground"
-        aria-label="Rename"
-        onClick={() => setLocalRenaming(true)}
-      >
-        <Pencil />
-      </Button>
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        className="text-muted-foreground hover:text-destructive"
-        aria-label="Delete recording"
-        onClick={() => {
+  const contextMenu = (
+    <ContextMenuContent>
+      <ContextMenuItem onSelect={() => setLocalRenaming(true)}>
+        <Pencil /> Rename
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem
+        variant="destructive"
+        onSelect={() => {
           if (isCurrent) stopPlayer();
           playPocketSound("destructive");
           void deleteRecording(recording.id);
         }}
       >
-        <Trash2 />
-      </Button>
-    </div>
+        <Trash2 /> Delete
+      </ContextMenuItem>
+    </ContextMenuContent>
   );
 
   return (
-    <li
-      ref={rowRef}
-      tabIndex={0}
-      data-tauri-drag-region="deep"
-      onKeyDown={onKeyDownRow}
-      className="group flex items-start gap-3 px-1 py-3"
-    >
-      <div className="relative mt-0.5 size-8 shrink-0">
-        <Button
-          size="icon"
-          variant="secondary"
-          className="size-8 rounded-full"
-          aria-label={playing ? "Pause" : "Play"}
-          onClick={toggle}
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <li
+          ref={rowRef}
+          tabIndex={0}
+          data-tauri-drag-region="deep"
+          onKeyDown={onKeyDownRow}
+          className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-colors hover:border-border"
         >
-          {playing ? <Pause /> : <Play />}
-        </Button>
-      </div>
-
-      <div className="min-w-0 flex-1">
-        {renaming ? (
-          <div className="flex items-center gap-1">
-            <Input
-              autoFocus
-              value={name}
-              className="h-7"
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void submitRename();
-                if (e.key === "Escape") {
-                  setLocalRenaming(false);
-                  clearEditRequest();
-                }
-              }}
-              onBlur={() => void submitRename()}
-            />
+          <div className="relative mt-0.5 size-8 shrink-0">
             <Button
               size="icon"
-              variant="ghost"
-              className="size-7"
-              aria-label="Confirm rename"
-              onClick={() => void submitRename()}
+              variant="secondary"
+              className="size-8 rounded-full"
+              aria-label={playing ? "Pause" : "Play"}
+              onClick={toggle}
             >
-              <Check className="size-3.5" />
+              {playing ? <Pause /> : <Play />}
             </Button>
           </div>
-        ) : (
-          <p className="truncate text-sm font-normal">{recording.name}</p>
-        )}
-        <div className="mt-1 flex min-h-6 items-center justify-between gap-2">
-          <p className="min-w-0 text-[11px] text-muted-foreground/70">
-            {formatDuration(recording.durationMs)} · {formatBytes(recording.sizeBytes)} ·{" "}
-            {formatRelative(recording.createdAt)}
-          </p>
-          {hoverActions}
-        </div>
-      </div>
-    </li>
+
+          <div className="min-w-0 flex-1">
+            {renaming ? (
+              <div className="flex items-center gap-1">
+                <Input
+                  autoFocus
+                  value={name}
+                  className="h-7"
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void submitRename();
+                    if (e.key === "Escape") {
+                      setLocalRenaming(false);
+                      clearEditRequest();
+                    }
+                  }}
+                  onBlur={() => void submitRename()}
+                />
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-7"
+                  aria-label="Confirm rename"
+                  onClick={() => void submitRename()}
+                >
+                  <Check className="size-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <p className="truncate text-sm font-normal">{recording.name}</p>
+            )}
+            <p className="mt-1 text-[11px] text-muted-foreground/70">
+              {formatDuration(recording.durationMs)} · {formatBytes(recording.sizeBytes)}
+            </p>
+          </div>
+        </li>
+      </ContextMenuTrigger>
+      {contextMenu}
+    </ContextMenu>
   );
 }
 
