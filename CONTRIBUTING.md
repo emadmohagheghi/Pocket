@@ -17,14 +17,14 @@ Thank you for helping improve Pocket.
 Pocket currently targets Windows x64.
 
 ```powershell
-npm install
-npm run tauri dev
+pnpm install
+pnpm tauri dev
 ```
 
 Before submitting a pull request, run:
 
 ```powershell
-npm run build
+pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
