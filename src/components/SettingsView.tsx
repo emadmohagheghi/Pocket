@@ -263,7 +263,7 @@ function Section({
         <span className="text-muted-foreground">{icon}</span>
         <h2 className="text-sm font-semibold">{title}</h2>
       </div>
-      <div className="space-y-1">{children}</div>
+      <div className="space-y-2">{children}</div>
     </section>
   );
 }
@@ -278,7 +278,7 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg px-1 py-2.5">
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-border/60 bg-card px-3 py-2.5">
       <div className="min-w-0">
         <Label className="text-[13px]">{label}</Label>
         {description ? (

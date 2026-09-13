@@ -34,7 +34,7 @@ type FeedEntry =
   | { key: string; createdAt: number; kind: "voice"; recording: Recording };
 
 const CAPTURE_BAR_CLASS =
-  "flex items-center gap-2.5 rounded-full border border-border/60 bg-muted/50 px-3.5 py-2 transition-colors focus-within:border-border";
+  "flex items-center gap-2.5 rounded-full border border-border/60 bg-card px-3.5 py-2 transition-colors focus-within:border-border";
 
 /** Single unified feed: text items and voice recordings together, newest first. */
 export function ItemList() {
@@ -106,7 +106,7 @@ export function ItemList() {
       {pinnedEntries.length > 0 ? (
         <section>
           <SectionLabel>Pinned</SectionLabel>
-          <ul className="divide-y divide-border/70">
+          <ul className="space-y-2">
             {pinnedEntries.map(renderEntry)}
           </ul>
         </section>
@@ -115,7 +115,7 @@ export function ItemList() {
       {groups.map(({ label, entries }) => (
         <section key={label}>
           <SectionLabel>{label}</SectionLabel>
-          <ul className="divide-y divide-border/70">
+          <ul className="space-y-2">
             {entries.map(renderEntry)}
           </ul>
         </section>

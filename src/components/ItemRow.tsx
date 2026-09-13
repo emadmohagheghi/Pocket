@@ -223,7 +223,7 @@ export function ItemRow({ item, focused }: Props) {
       data-tauri-drag-region="deep"
       data-item-id={item.id}
       onKeyDown={onKeyDownRow}
-      className="group flex items-start gap-3 px-1 py-3"
+      className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-colors hover:border-border"
     >
       <ItemBody
         item={item}
