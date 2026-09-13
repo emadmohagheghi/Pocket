@@ -19,7 +19,7 @@ to this file.
 1. Make the repository public.
 2. Enable multi-factor authentication for every maintainer.
 3. Enable GitHub private vulnerability reporting.
-4. Add branch protection or a ruleset for `master` that requires the CI job.
+4. Add branch protection or a ruleset for `main` that requires the CI job.
 5. Confirm the public repository description, topics, and Releases page explain
    what Pocket does.
 6. Review the current SignPath Foundation terms and submit the application at
@@ -44,4 +44,3 @@ Then update the release workflow to:
 
 The exact SignPath workflow cannot be committed safely before those identifiers
 and the approved artifact configuration exist.
-
