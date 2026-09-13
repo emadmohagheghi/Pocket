@@ -45,6 +45,8 @@ export interface Settings {
   startMinimized: boolean;
   activeWorkspaceId: string;
   gamingDetectionEnabled: boolean;
+  /** Keep the window above all other applications. */
+  alwaysOnTop: boolean;
   theme: "system" | "light" | "dark";
   /** 0 shows the full note; 1–6 sets the collapsed preview height. */
   notePreviewLines: number;
