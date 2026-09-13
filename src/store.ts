@@ -69,6 +69,10 @@ interface PocketStore {
   createItem: (content: string) => Promise<Item | null>;
   updateItem: (itemId: string, patch: Partial<Item>) => Promise<void>;
   deleteItem: (itemId: string) => Promise<void>;
+  /** Toggle the todo-style done state (backed by the legacy `pinned`
+      flag, which is no longer used for pinning). Works for both text
+      items and voice recordings. */
+  setEntryDone: (kind: "text" | "voice", entryId: string, done: boolean) => Promise<void>;
 
   renameRecording: (recordingId: string, name: string) => Promise<void>;
   deleteRecording: (recordingId: string) => Promise<void>;
@@ -235,6 +239,16 @@ export const usePocket = create<PocketStore>((set, get) => ({
       await api.deleteItem(wsId, itemId);
     } catch (e) {
       void api.log(`deleteItem FAILED: ${errMessage(e)}`);
+    }
+  },
+
+  setEntryDone: async (kind, entryId, done) => {
+    const wsId = get().settings?.activeWorkspaceId;
+    if (!wsId) return;
+    try {
+      await api.setPinned(wsId, kind, entryId, done);
+    } catch (e) {
+      void api.log(`setEntryDone FAILED: ${errMessage(e)}`);
     }
   },
 

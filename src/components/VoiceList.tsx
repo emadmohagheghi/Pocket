@@ -2,10 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, Trash2 } from "lucide-react";
 
 import { usePocket } from "@/store";
+import type { FeedActions } from "@/components/ItemList";
 import { voiceUrl } from "@/lib/api";
 import { cn, formatDuration } from "@/lib/utils";
-import { playPocketSound } from "@/lib/sound";
-import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -17,15 +16,22 @@ import type { Recording } from "@/types";
 export function VoiceRow({
   recording,
   focused,
+  selected,
+  toggleSelect,
+  actions,
 }: {
   recording: Recording;
   focused?: boolean;
+  selected: boolean;
+  toggleSelect: (id: string) => void;
+  actions: FeedActions;
 }) {
   // Field selectors: rows must not re-render on unrelated store traffic such
   // as other rows' edits or the capture bar's state. Progress selectors
   // return a stable sentinel for rows that aren't currently playing, so only
   // the active row re-renders during playback.
-  const deleteRecording = usePocket((s) => s.deleteRecording);
+  const setEntryDone = usePocket((s) => s.setEntryDone);
+  const [menuOpen, setMenuOpen] = useState(false);
   const isCurrent = usePocket((s) => s.player?.recordingId === recording.id);
   const playing = usePocket((s) =>
     s.player?.recordingId === recording.id ? s.playerPlaying : false
@@ -97,8 +103,7 @@ export function VoiceRow({
         variant="destructive"
         onSelect={() => {
           if (isCurrent) stopPlayer();
-          playPocketSound("destructive");
-          void deleteRecording(recording.id);
+          actions.deleteSelected();
         }}
       >
         <Trash2 /> Delete
@@ -107,26 +112,67 @@ export function VoiceRow({
   );
 
   return (
-    <ContextMenu>
+    <ContextMenu onOpenChange={(open) => setMenuOpen(open)}>
       <ContextMenuTrigger asChild>
         <li
           ref={rowRef}
           tabIndex={0}
           onKeyDown={onKeyDownRow}
-          className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-colors hover:border-border data-[state=open]:border-blue-500"
+          onClick={(e) => {
+            if ((e.target as HTMLElement).closest("button, input")) return;
+            toggleSelect(recording.id);
+          }}
+          onContextMenu={() => {
+            if (!selected) toggleSelect(recording.id);
+          }}
+          className={
+            "group flex items-start gap-3 rounded-[24px] border bg-card px-3 py-2.5 transition-colors " +
+            (menuOpen || selected
+              ? "border-blue-500"
+              : "border-border/60 hover:border-border")
+          }
         >
-          <Button
-            size="icon"
-            variant={isCurrent ? "default" : "secondary"}
-            className="size-9 shrink-0 rounded-full"
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={recording.pinned}
+            aria-label={recording.pinned ? "Mark as not done" : "Mark as done"}
+            onClick={(e) => {
+              e.stopPropagation();
+              void setEntryDone("voice", recording.id, !recording.pinned);
+            }}
+            className="t-check flex size-5 shrink-0 items-center justify-center rounded-full border-[1.5px]"
+          >
+            <svg
+              viewBox="0 0 10.1668 10.1668"
+              className="size-2"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M1 5.52L3.92 9.17L9.17 1" />
+            </svg>
+          </button>
+          <button
+            type="button"
             aria-label={playing ? "Pause" : "Play"}
             onClick={toggle}
+            className={
+              "flex size-5 shrink-0 items-center justify-center rounded-full transition-colors " +
+              (isCurrent ? "text-foreground" : "text-muted-foreground hover:text-foreground")
+            }
           >
-            {playing ? <Pause /> : <Play className="translate-x-px" />}
-          </Button>
+            <span className="t-icon-swap size-3.5" data-state={playing ? "b" : "a"}>
+              <Play data-icon="a" className="t-icon size-3.5 translate-x-px" />
+              <Pause data-icon="b" className="t-icon size-3.5" />
+            </span>
+          </button>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-3">
+            <div className="flex h-5 items-center gap-3">
               <VoiceWaveform
                 seed={recording.id}
                 peaks={peaks}
@@ -136,7 +182,12 @@ export function VoiceRow({
                 onSeek={seekWave}
                 setNode={setWaveNode}
               />
-              <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+              <span
+                className={
+                  "shrink-0 text-[11px] tabular-nums text-muted-foreground " +
+                  (recording.pinned ? "line-through opacity-70" : "")
+                }
+              >
                 {formatDuration(isCurrent && elapsedSec >= 0 ? shownMs : totalMs)}
               </span>
             </div>

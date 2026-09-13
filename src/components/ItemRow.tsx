@@ -1,23 +1,29 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  Check,
   ChevronDown,
-  ChevronUp,
   Copy,
-  ExternalLink,
+  FolderInput,
+  List,
+  Merge,
   Pencil,
+  StretchHorizontal,
   Trash2,
 } from "lucide-react";
 
 import { usePocket } from "@/store";
-import { api } from "@/lib/api";
+import type { FeedActions } from "@/components/ItemList";
 import { cn, looksLikeUrl } from "@/lib/utils";
-import { playPocketSound } from "@/lib/sound";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -31,16 +37,31 @@ import type { Item } from "@/types";
 interface Props {
   item: Item;
   focused: boolean;
+  selected: boolean;
+  toggleSelect: (id: string) => void;
+  editRequest: { id: string; nonce: number } | null;
+  expandRequest: { id: string; nonce: number } | null;
+  actions: FeedActions;
 }
 
-export function ItemRow({ item, focused }: Props) {
+export function ItemRow({
+  item,
+  focused,
+  selected,
+  toggleSelect,
+  editRequest,
+  expandRequest,
+  actions,
+}: Props) {
   // Field selectors: rows must not re-render on unrelated store traffic such
   // as voice-player progress while a recording plays.
   const updateItem = usePocket((s) => s.updateItem);
-  const deleteItem = usePocket((s) => s.deleteItem);
+  const setEntryDone = usePocket((s) => s.setEntryDone);
   const clearEditRequest = usePocket((s) => s.clearEditRequest);
-  const editRequest = usePocket((s) => s.editRequest);
+  const workspaces = usePocket((s) => s.workspaces);
+  const activeWorkspaceId = usePocket((s) => s.settings?.activeWorkspaceId);
   const previewLineLimit = usePocket((s) => s.settings?.notePreviewLines ?? 5);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [isExpandable, setIsExpandable] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [localEditing, setLocalEditing] = useState(false);
@@ -54,19 +75,15 @@ export function ItemRow({ item, focused }: Props) {
     ? { WebkitLineClamp: previewLineLimit }
     : undefined;
 
-  // An outstanding store edit request (from search) drives editing by
-  // derivation — the row is editing while its request is open, so no effect
-  // is needed to copy the request into local state.
-  const editNonce =
-    editRequest?.kind === "text" && editRequest.id === item.id
-      ? editRequest.nonce
-      : null;
-  const editing = localEditing || editNonce !== null;
+  // An outstanding edit request (from search or the bulk Enter shortcut)
+  // drives editing by derivation — the row is editing while its request is
+  // open.
+  const editing = localEditing || editRequest !== null;
+  const done = item.pinned;
 
   useEffect(() => {
     if (focused) {
       rowRef.current?.scrollIntoView({ block: "center" });
-      rowRef.current?.focus();
       usePocket.getState().setFocusItem(null);
     }
   }, [focused]);
@@ -143,22 +160,19 @@ export function ItemRow({ item, focused }: Props) {
     };
   }, [editing, expanded]);
 
-  const copy = async () => {
-    try {
-      await api.copyToClipboard(item.url ?? item.content);
-      playPocketSound("copy");
-    } catch {
-      playPocketSound("error");
-    }
-  };
-
   const editStartedAt = useRef(0);
   useEffect(() => {
     if (editing) editStartedAt.current = Date.now();
   }, [editing]);
 
+  // Bulk Expand action (single request per selection change).
+  useEffect(() => {
+    if (expandRequest) setExpanded(true);
+  }, [expandRequest]);
+
   const endEditing = () => {
     setLocalEditing(false);
+    if (editRequest) actions.requestEdit("__cancel__");
     clearEditRequest();
   };
 
@@ -188,9 +202,8 @@ export function ItemRow({ item, focused }: Props) {
   // Link rendering is purely visual: any text item that *is* a URL renders
   // as a clickable link. Detected at render time, never persisted as a type.
   const isLink = looksLikeUrl(item.content) || (item.url !== null && looksLikeUrl(item.url));
-  const linkTarget = item.url ?? item.content;
 
-  // One shared editing field for both the collapsible and plain layouts.
+  // One shared editing field: the whole card becomes the textarea.
   const editField = (
     <Textarea
       ref={editRef}
@@ -218,47 +231,148 @@ export function ItemRow({ item, focused }: Props) {
     />
   );
 
-
-  const deleteEntry = () => {
-    playPocketSound("destructive");
-    void deleteItem(item.id);
+  /** Right-click selects the card first, so every menu action can operate
+      on the whole selection (single click-select + right-click = same). */
+  const ensureSelected = () => {
+    if (!selected) toggleSelect(item.id);
   };
+
+  const { deleteSelected } = actions;
 
   const contextMenu = (
     <ContextMenuContent>
-      {isLink ? (
-        <ContextMenuItem onSelect={() => void api.openUrl(linkTarget).catch(() => {})}>
-          <ExternalLink /> Open in browser
+      <ContextMenuItem
+        onSelect={() => {
+          ensureSelected();
+          actions.copySelected(false);
+        }}
+      >
+        <Copy /> Copy
+        <ContextMenuShortcut>⌃C</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem
+        onSelect={() => {
+          ensureSelected();
+          actions.copySelected(true);
+        }}
+      >
+        <List /> Copy as List
+        <ContextMenuShortcut>⇧⌃C</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem
+        onSelect={() => {
+          ensureSelected();
+          actions.toggleDoneSelected();
+        }}
+      >
+        <Check /> {done ? "Mark as Not Done" : "Mark as Done"}
+        <ContextMenuShortcut>Space</ContextMenuShortcut>
+      </ContextMenuItem>
+      {canCollapse && !expanded ? (
+        <ContextMenuItem onSelect={() => actions.requestExpand(item.id)}>
+          <StretchHorizontal /> Expand
         </ContextMenuItem>
       ) : null}
-      <ContextMenuItem onSelect={() => void copy()}>
-        <Copy /> Copy
-      </ContextMenuItem>
-      <ContextMenuItem onSelect={() => setLocalEditing(true)}>
-        <Pencil /> Edit
-      </ContextMenuItem>
       <ContextMenuSeparator />
-      <ContextMenuItem variant="destructive" onSelect={deleteEntry}>
+      <ContextMenuItem
+        onSelect={() => {
+          ensureSelected();
+          if (actions.selectedTextIds.length === 1) {
+            actions.requestEdit(actions.selectedTextIds[0]);
+          } else {
+            setLocalEditing(true);
+          }
+        }}
+      >
+        <Pencil /> Edit
+        <ContextMenuShortcut>⏎</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem
+        disabled={actions.selectedTextIds.length < 2}
+        onSelect={() => {
+          actions.mergeSelected();
+        }}
+      >
+        <Merge /> Merge Notes
+        <ContextMenuShortcut>⇧⌃M</ContextMenuShortcut>
+      </ContextMenuItem>
+      {workspaces.length > 1 ? (
+        <ContextMenuSub>
+          <ContextMenuSubTrigger disabled={actions.selectedTextIds.length === 0}>
+            <FolderInput /> Move to
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            {workspaces
+              .filter((w) => w.id !== activeWorkspaceId)
+              .map((w) => (
+                <ContextMenuItem key={w.id} onSelect={() => actions.moveSelectedTo(w.id, w.name)}>
+                  {w.name}
+                </ContextMenuItem>
+              ))}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      ) : null}
+      <ContextMenuSeparator />
+      <ContextMenuItem variant="destructive" onSelect={deleteSelected}>
         <Trash2 /> Delete
       </ContextMenuItem>
     </ContextMenuContent>
   );
 
   return (
-    <ContextMenu>
+    <ContextMenu onOpenChange={(open) => setMenuOpen(open)}>
       <ContextMenuTrigger asChild>
         <li
           ref={rowRef}
           tabIndex={0}
           data-item-id={item.id}
           onKeyDown={onKeyDownRow}
-          className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-colors hover:border-border data-[state=open]:border-blue-500"
+          onClick={(e) => {
+            // Plain click selects (todo-style); interactive children opt out.
+            if (editing) return;
+            if ((e.target as HTMLElement).closest("button, textarea, input, a")) return;
+            toggleSelect(item.id);
+          }}
+          onContextMenu={() => {
+            if (!selected) toggleSelect(item.id);
+          }}
+          className={
+            "group flex items-start gap-3 rounded-[24px] border bg-card px-3 py-2.5 transition-colors " +
+            (menuOpen || selected
+              ? "border-blue-500"
+              : "border-border/60 hover:border-border")
+          }
         >
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={done}
+            aria-label={done ? "Mark as not done" : "Mark as done"}
+            onClick={(e) => {
+              e.stopPropagation();
+              void setEntryDone("text", item.id, !done);
+            }}
+            className="t-check flex size-5 shrink-0 items-center justify-center rounded-full border-[1.5px]"
+          >
+            <svg
+              viewBox="0 0 10.1668 10.1668"
+              className="size-2"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M1 5.52L3.92 9.17L9.17 1" />
+            </svg>
+          </button>
           {editing ? (
-            editField
+            <div className="min-w-0 flex-1">{editField}</div>
           ) : (
             <ItemBody
               item={item}
+              done={done}
               canCollapse={canCollapse}
               collapseEnabled={collapseEnabled}
               previewStyle={previewStyle}
@@ -275,9 +389,10 @@ export function ItemRow({ item, focused }: Props) {
   );
 }
 
-/** Note content: collapsible preview/full/edit branches. */
+/** Note content: collapsible preview/full branches. */
 function ItemBody({
   item,
+  done,
   canCollapse,
   collapseEnabled,
   previewStyle,
@@ -287,6 +402,7 @@ function ItemBody({
   previewRef,
 }: {
   item: Item;
+  done: boolean;
   canCollapse: boolean;
   collapseEnabled: boolean;
   previewStyle: { WebkitLineClamp: number } | undefined;
@@ -302,6 +418,7 @@ function ItemBody({
       {canCollapse ? (
         <CollapsibleItemBody
           item={item}
+          done={done}
           open={open}
           setExpanded={setExpanded}
           previewStyle={previewStyle}
@@ -314,9 +431,10 @@ function ItemBody({
           dir="auto"
           style={previewStyle}
           className={cn(
-            "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
+            "whitespace-pre-wrap text-sm font-normal leading-5 text-foreground [overflow-wrap:anywhere]",
             collapseEnabled && "overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical]",
-            isLink && "text-primary underline-offset-2 hover:underline"
+            done && "text-muted-foreground line-through",
+            isLink && !done && "text-primary underline-offset-2 hover:underline"
           )}
         >
           {item.content}
@@ -326,9 +444,10 @@ function ItemBody({
   );
 }
 
-/** The collapsible preview/full/edit layout for rows over the line limit. */
+/** The collapsible preview/full layout for rows over the line limit. */
 function CollapsibleItemBody({
   item,
+  done,
   open,
   setExpanded,
   previewStyle,
@@ -336,6 +455,7 @@ function CollapsibleItemBody({
   previewRef,
 }: {
   item: Item;
+  done: boolean;
   open: boolean;
   setExpanded: (value: boolean | ((current: boolean) => boolean)) => void;
   previewStyle: { WebkitLineClamp: number } | undefined;
@@ -351,9 +471,10 @@ function CollapsibleItemBody({
           aria-hidden={open}
           style={previewStyle}
           className={cn(
-            "col-start-1 row-start-1 self-start overflow-hidden whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [overflow-wrap:anywhere] transition-opacity duration-150",
+            "col-start-1 row-start-1 self-start overflow-hidden whitespace-pre-wrap text-sm font-normal leading-5 text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [overflow-wrap:anywhere] transition-opacity duration-150",
             open && "pointer-events-none opacity-0",
-            isLink && "text-primary underline-offset-2 hover:underline"
+            done && "text-muted-foreground line-through",
+            isLink && !done && "text-primary underline-offset-2 hover:underline"
           )}
         >
           {item.content}
@@ -366,8 +487,9 @@ function CollapsibleItemBody({
           <p
             dir="auto"
             className={cn(
-              "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
-              isLink && "text-primary underline-offset-2 hover:underline"
+              "whitespace-pre-wrap text-sm font-normal leading-5 text-foreground [overflow-wrap:anywhere]",
+              done && "text-muted-foreground line-through",
+              isLink && !done && "text-primary underline-offset-2 hover:underline"
             )}
           >
             {item.content}
@@ -384,11 +506,13 @@ function CollapsibleItemBody({
               variant="ghost"
               className="h-5 px-1.5 text-[11px] text-muted-foreground"
             >
-              {open ? (
-                <ChevronUp data-icon="inline-start" />
-              ) : (
-                <ChevronDown data-icon="inline-start" />
-              )}
+              <ChevronDown
+                data-icon="inline-start"
+                className={cn(
+                  "transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                  open && "-scale-y-100"
+                )}
+              />
               {open ? "Show less" : "Show more"}
             </Button>
           </CollapsibleTrigger>
