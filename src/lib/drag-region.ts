@@ -1,11 +1,13 @@
 // Vendored from Tauri's built-in drag-region script
 // (tauri/src/window/scripts/drag.js in the Tauri repository).
 //
-// Tauri ships this file but, as of the version this app builds against, never
-// wires it into webviews — `data-tauri-drag-region` attributes are inert
-// without it, which is why our frameless window could not be dragged.
-// Importing this module (side effect) installs the stock behavior:
-// mousedown inside a drag region invokes `plugin:window|start_dragging`.
+// Tauri (>= 2.x, e.g. 2.11.5) ALSO injects its own copy of this script into
+// every webview via the window plugin's init script. That stock copy runs
+// before any page script and calls stopImmediatePropagation(), so it would
+// swallow this module entirely — reintroducing the bugs fixed here (inputs
+// never blurring, scrollbar grabs dragging the window). To win the race this
+// module registers its mousedown listener in the CAPTURE phase: it always runs
+// first, handles the drag itself, and blocks the stock copy when needed.
 //
 // Original license headers preserved:
 //
@@ -89,6 +91,33 @@ declare global {
     return false
   }
 
+  // Native scrollbars are not elements: a mousedown on a scrollbar thumb or
+  // track targets the scroll container itself (a plain div), so without this
+  // check grabbing the thumb would start a window drag instead of scrolling.
+  function isOnScrollbar(e: MouseEvent, composedPath: EventTarget[]): boolean {
+    for (const target of composedPath) {
+      if (!(target instanceof HTMLElement)) continue
+      const el = target
+      const rect = el.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) continue
+      // clientWidth/clientHeight exclude the scrollbar, so any leftover
+      // width/height on a scrollable element is (at least) the scrollbar.
+      const vBar = rect.width - el.clientWidth
+      if (vBar > 0 && el.scrollHeight > el.clientHeight) {
+        if (e.clientX >= rect.right - vBar) return true
+        // In RTL the vertical scrollbar sits on the left edge.
+        if (getComputedStyle(el).direction === 'rtl' && e.clientX <= rect.left + vBar) {
+          return true
+        }
+      }
+      const hBar = rect.height - el.clientHeight
+      if (hBar > 0 && el.scrollWidth > el.clientWidth && e.clientY >= rect.bottom - hBar) {
+        return true
+      }
+    }
+    return false
+  }
+
   // Upstream fills this in at build time; detect at runtime instead.
   const osName: string = /mac/i.test(navigator.userAgent) ? 'macos' : 'windows'
 
@@ -96,35 +125,58 @@ declare global {
   let initialX = 0
   let initialY = 0
 
-  document.addEventListener('mousedown', (e) => {
-    if (
-      // was left mouse button
-      e.button === 0 &&
-      // and was normal click to drag or double click to maximize
-      (e.detail === 1 || e.detail === 2) &&
-      // and is drag region
-      isDragRegion(e.composedPath())
-    ) {
-      // macOS maximization happens on `mouseup`,
-      // so we save needed state and early return
-      if (osName === 'macos' && e.detail === 2) {
-        initialX = e.clientX
-        initialY = e.clientY
+  // Capture phase: must run BEFORE Tauri's stock drag script (a document-level
+  // bubble listener injected as an init script). We stopImmediatePropagation()
+  // whenever the stock copy must not act — it has no blur handling and no
+  // scrollbar guard, so letting it run reintroduces both bugs.
+  document.addEventListener(
+    'mousedown',
+    (e) => {
+      const path = e.composedPath()
+      // Native scrollbar interaction: block the stock drag script and let the
+      // browser scroll natively.
+      if (isOnScrollbar(e, path)) {
+        e.stopImmediatePropagation()
         return
       }
+      if (
+        // was left mouse button
+        e.button === 0 &&
+        // and was normal click to drag or double click to maximize
+        (e.detail === 1 || e.detail === 2) &&
+        // and is drag region
+        isDragRegion(path)
+      ) {
+        // macOS maximization happens on `mouseup`,
+        // so we save needed state and early return
+        if (osName === 'macos' && e.detail === 2) {
+          initialX = e.clientX
+          initialY = e.clientY
+          return
+        }
 
-      // prevents text cursor
-      e.preventDefault()
+        // Clicking window chrome must release focus explicitly: the
+        // preventDefault() below freezes focus in place, so without this an
+        // input keeps its caret (and focus ring) when clicking elsewhere.
+        // Mousedowns on fields never reach here — fields block dragging.
+        const active = document.activeElement
+        if (active instanceof HTMLElement && active !== e.target) active.blur()
 
-      // fix #2549: double click on drag region edge causes content to maximize without window sizing change
-      // https://github.com/tauri-apps/tauri/issues/2549#issuecomment-1250036908
-      e.stopImmediatePropagation()
+        // prevents text cursor
+        e.preventDefault()
 
-      // start dragging if the element has a `tauri-drag-region` data attribute and maximize on double-clicking it
-      const cmd = e.detail === 2 ? 'internal_toggle_maximize' : 'start_dragging'
-      void window.__TAURI_INTERNALS__.invoke('plugin:window|' + cmd)
-    }
-  })
+        // fix #2549: double click on drag region edge causes content to maximize without window sizing change
+        // https://github.com/tauri-apps/tauri/issues/2549#issuecomment-1250036908
+        // Also blocks Tauri's stock drag script from handling the same event.
+        e.stopImmediatePropagation()
+
+        // start dragging if the element has a `tauri-drag-region` data attribute and maximize on double-clicking it
+        const cmd = e.detail === 2 ? 'internal_toggle_maximize' : 'start_dragging'
+        void window.__TAURI_INTERNALS__.invoke('plugin:window|' + cmd)
+      }
+    },
+    true
+  )
 
   // on macOS we maximize on mouseup instead, to match the system behavior where maximization can be canceled
   // if the mouse moves outside the data-tauri-drag-region
@@ -138,6 +190,8 @@ declare global {
         // and the cursor hasn't moved from initial mousedown
         e.clientX === initialX &&
         e.clientY === initialY &&
+        // and not on a scrollbar
+        !isOnScrollbar(e, e.composedPath()) &&
         // and the event path contains a drag region (with no clickable element in between)
         isDragRegion(e.composedPath())
       ) {
