@@ -4,3 +4,6 @@
 /src-tauri/gen
 *.tsbuildinfo
 /release-log.txt
+
+# Local marketing assets (Telegram post, renders)
+/promo
