@@ -106,16 +106,12 @@
     }
 }
 
-/* Thin scrollbars that stay hidden until the pointer is over their scroll
-   container — hovering any content inside it (an ancestor :hover chain)
-   reveals the thumb. Thumb space is always reserved, so revealing never
-   shifts layout. */
+/* Scrollbars are fully invisible everywhere — content scrolls normally
+   (wheel, touch, drag) but no thumb is ever painted. Thumb space is still
+   reserved by the engines, so nothing shifts. */
 * {
-  scrollbar-width: thin;
+  scrollbar-width: none;
   scrollbar-color: transparent transparent;
-}
-*:hover {
-  scrollbar-color: var(--muted) transparent;
 }
 
 /* App chrome is not text-selectable — only note content (select-text on the
@@ -152,16 +148,9 @@ textarea {
   border: 2px solid transparent;
   background-clip: content-box;
 }
-*:hover::-webkit-scrollbar-thumb {
-  background: var(--muted);
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-/* Last so it wins the specificity tie when the thumb itself is hovered. */
-*::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-foreground);
-  border: 2px solid transparent;
-  background-clip: content-box;
+
+*::-webkit-scrollbar-thumb {
+  background: transparent;
 }
 
 @keyframes pocket-collapsible-down {
@@ -185,3 +174,97 @@ textarea {
     opacity: 0;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Transitions (from /transitions reference docs)
+   Shared tuning variables + the transitions used in this app.
+--------------------------------------------------------------------------- */
+:root {
+  --check-box: 150ms;
+  --check-draw: 350ms;
+  --check-delay: 0ms;
+  --check-uncheck: 150ms;
+  --check-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --icon-swap-dur: 250ms;
+  --icon-swap-blur: 2px;
+  --icon-swap-start-scale: 0.25;
+  --icon-swap-ease: ease-in-out;
+  --shake-distance: 6px;
+  --shake-overshoot: 4px;
+  --shake-dur-a: 80ms;
+  --shake-dur-b: 60ms;
+  --shake-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Checkbox check: the circle fills, then the checkmark draws itself in. */
+.t-check {
+  transition:
+    background var(--check-box) var(--check-ease),
+    border-color var(--check-box) var(--check-ease);
+}
+.t-check[aria-checked="true"] {
+  /* Checked: solid blue, no border ring. Unchecked keeps the muted ring. */
+  background: #0a84ff;
+  border-color: transparent;
+}
+.t-check svg path {
+  stroke: #ffffff;
+  stroke-dasharray: var(--check-len, 15);
+  stroke-dashoffset: var(--check-len, 15);
+  transition: stroke-dashoffset var(--check-uncheck) var(--check-ease);
+}
+.t-check[aria-checked="true"] svg path {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset var(--check-draw) var(--check-ease) var(--check-delay);
+}
+
+/* Icon swap: two icons stacked in one grid cell, cross-fade with blur. */
+.t-icon-swap {
+  position: relative;
+  display: inline-grid;
+}
+.t-icon-swap .t-icon {
+  grid-area: 1 / 1;
+  transition:
+    opacity var(--icon-swap-dur) var(--icon-swap-ease),
+    filter var(--icon-swap-dur) var(--icon-swap-ease),
+    transform var(--icon-swap-dur) var(--icon-swap-ease);
+  will-change: opacity, filter, transform;
+}
+.t-icon-swap[data-state="a"] .t-icon[data-icon="a"],
+.t-icon-swap[data-state="b"] .t-icon[data-icon="b"] {
+  opacity: 1;
+  filter: blur(0);
+  transform: scale(1);
+}
+.t-icon-swap[data-state="a"] .t-icon[data-icon="b"],
+.t-icon-swap[data-state="b"] .t-icon[data-icon="a"] {
+  opacity: 0;
+  filter: blur(var(--icon-swap-blur));
+  transform: scale(var(--icon-swap-start-scale));
+}
+
+/* Error shake: left/right swing with overshoot (A,A,B,B leg pattern). */
+@keyframes pocket-input-shake {
+  0%     { transform: translateX(0);                                     animation-timing-function: var(--shake-ease); }
+  28.57% { transform: translateX(var(--shake-distance));                 animation-timing-function: var(--shake-ease); }
+  57.14% { transform: translateX(calc(var(--shake-distance) * -1));      animation-timing-function: var(--shake-ease); }
+  78.57% { transform: translateX(var(--shake-overshoot));                animation-timing-function: var(--shake-ease); }
+  100%   { transform: translateX(0); }
+}
+.pocket-shake {
+  animation: pocket-input-shake calc(var(--shake-dur-a) * 2 + var(--shake-dur-b) * 2) ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-check,
+  .t-check svg path,
+  .t-icon-swap .t-icon {
+    transition: none !important;
+  }
+  .pocket-shake {
+    animation: none !important;
+  }
+}
+
+
