@@ -82,16 +82,16 @@ local protocol that only exposes recordings registered in workspace metadata.
 Requirements:
 
 - Windows 10 or Windows 11 x64
-- Node.js and npm
+- Node.js and pnpm
 - Rust stable with the MSVC toolchain
 - Microsoft Edge WebView2 Runtime
 
 ```powershell
-npm install
-npm run tauri dev
-npm run build
+pnpm install
+pnpm tauri dev
+pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml
-npm run tauri build
+pnpm tauri build
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change.

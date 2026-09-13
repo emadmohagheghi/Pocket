@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { recordingExtension } from "@/lib/api";
+import { api, recordingExtension } from "@/lib/api";
 
 interface RecorderState {
   recording: boolean;
@@ -88,11 +88,11 @@ export function useRecorder() {
         throw new DOMException("mediaDevices unavailable (insecure context?)", "NotSupportedError");
       }
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      void import("@/lib/api").then(({ api }) => api.log("getUserMedia: microphone acquired"));
+      void api.log("getUserMedia: microphone acquired");
     } catch (e) {
       if (requestId !== startRequestRef.current) return;
 
-      void import("@/lib/api").then(({ api }) => api.log(`getUserMedia FAILED: ${e}`));
+      void api.log(`getUserMedia FAILED: ${e}`);
       startingRef.current = false;
       const denied =
         e instanceof DOMException &&
