@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Pause, Pencil, Play, RotateCcw, RotateCw, Square, Trash2 } from "lucide-react";
 
 import { usePocket } from "@/store";
 import { voiceUrl } from "@/lib/api";
-import { formatBytes, formatDuration } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
 import { playPocketSound } from "@/lib/sound";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,19 +24,28 @@ export function VoiceRow({
   focused?: boolean;
 }) {
   // Field selectors: rows must not re-render on unrelated store traffic such
-  // as other rows' edits or the capture bar's state.
+  // as other rows' edits or the capture bar's state. Progress selectors
+  // return a stable sentinel for rows that aren't currently playing, so only
+  // the active row re-renders on timeupdate.
   const deleteRecording = usePocket((s) => s.deleteRecording);
   const renameRecording = usePocket((s) => s.renameRecording);
-  const player = usePocket((s) => s.player);
-  const playerPlaying = usePocket((s) => s.playerPlaying);
+  const isCurrent = usePocket((s) => s.player?.recordingId === recording.id);
+  const playing = usePocket((s) =>
+    s.player?.recordingId === recording.id ? s.playerPlaying : false
+  );
+  const elapsedSec = usePocket((s) =>
+    s.player?.recordingId === recording.id ? s.playerTime : -1
+  );
   const playRecording = usePocket((s) => s.playRecording);
   const togglePlayer = usePocket((s) => s.togglePlayer);
   const stopPlayer = usePocket((s) => s.stopPlayer);
+  const requestPlayerSeek = usePocket((s) => s.requestPlayerSeek);
   const editRequest = usePocket((s) => s.editRequest);
   const clearEditRequest = usePocket((s) => s.clearEditRequest);
   const [localRenaming, setLocalRenaming] = useState(false);
   const [name, setName] = useState(recording.name);
   const rowRef = useRef<HTMLLIElement>(null);
+  const waveRef = useRef<HTMLDivElement>(null);
 
   // An outstanding store edit request (from search) drives renaming by
   // derivation — the row is renaming while its request is open.
@@ -54,9 +63,6 @@ export function VoiceRow({
       usePocket.getState().setFocusItem(null);
     }
   }, [focused]);
-
-  const isCurrent = player?.recordingId === recording.id;
-  const playing = isCurrent && playerPlaying;
 
   const toggle = () => {
     if (isCurrent) {
@@ -85,6 +91,19 @@ export function VoiceRow({
     setLocalRenaming(false);
     clearEditRequest();
   };
+
+  // Telegram-style seek: click anywhere on the waveform.
+  const seekWave = (clientX: number) => {
+    const el = waveRef.current;
+    if (!el || !isCurrent) return;
+    const rect = el.getBoundingClientRect();
+    const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    requestPlayerSeek(fraction * (recording.durationMs / 1000));
+  };
+
+  const totalMs = recording.durationMs;
+  const shownMs = elapsedSec >= 0 ? elapsedSec * 1000 : totalMs;
+  const progress = totalMs > 0 ? Math.min(1, Math.max(0, shownMs / totalMs)) : 0;
 
   const contextMenu = (
     <ContextMenuContent>
@@ -115,17 +134,15 @@ export function VoiceRow({
           onKeyDown={onKeyDownRow}
           className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-colors hover:border-border"
         >
-          <div className="relative mt-0.5 size-8 shrink-0">
-            <Button
-              size="icon"
-              variant="secondary"
-              className="size-8 rounded-full"
-              aria-label={playing ? "Pause" : "Play"}
-              onClick={toggle}
-            >
-              {playing ? <Pause /> : <Play />}
-            </Button>
-          </div>
+          <Button
+            size="icon"
+            variant={isCurrent ? "default" : "secondary"}
+            className="size-9 shrink-0 rounded-full"
+            aria-label={playing ? "Pause" : "Play"}
+            onClick={toggle}
+          >
+            {playing ? <Pause /> : <Play className="translate-x-px" />}
+          </Button>
 
           <div className="min-w-0 flex-1">
             {renaming ? (
@@ -155,11 +172,19 @@ export function VoiceRow({
                 </Button>
               </div>
             ) : (
-              <p className="truncate text-sm font-normal">{recording.name}</p>
+              <div className="flex items-center gap-3">
+                <VoiceWaveform
+                  seed={recording.id}
+                  progress={progress}
+                  active={isCurrent}
+                  ref={waveRef}
+                  onSeek={seekWave}
+                />
+                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                  {formatDuration(isCurrent && elapsedSec >= 0 ? shownMs : totalMs)}
+                </span>
+              </div>
             )}
-            <p className="mt-1 text-[11px] text-muted-foreground/70">
-              {formatDuration(recording.durationMs)} · {formatBytes(recording.sizeBytes)}
-            </p>
           </div>
         </li>
       </ContextMenuTrigger>
@@ -303,5 +328,77 @@ function BarButton({
     >
       {children}
     </Button>
+  );
+}
+
+const WAVE_BARS = 36;
+
+/**
+ * Telegram-style waveform: deterministic pseudo-random bars seeded by the
+ * recording id (stable across renders), with the played fraction filled in
+ * the primary color. Click anywhere to seek while the recording is active.
+ */
+function VoiceWaveform({
+  seed,
+  progress,
+  active,
+  onSeek,
+  ref,
+}: {
+  seed: string;
+  progress: number;
+  active: boolean;
+  onSeek: (clientX: number) => void;
+  ref: React.Ref<HTMLDivElement>;
+}) {
+  const heights = useMemo(() => {
+    // Mulberry32 over a simple string hash — tiny, deterministic, stable.
+    let h = 2166136261;
+    for (let i = 0; i < seed.length; i++) {
+      h ^= seed.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    let state = h >>> 0;
+    const next = () => {
+      state = (state + 0x6d2b79f5) | 0;
+      let t = Math.imul(state ^ (state >>> 15), 1 | state);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    return Array.from({ length: WAVE_BARS }, (_, i) => {
+      // Mid-heavy distribution with a gentle attack/decay envelope so the
+      // shape reads as audio rather than noise.
+      const envelope = Math.sin((Math.PI * (i + 0.5)) / WAVE_BARS);
+      return 0.25 + next() * 0.75 * (0.35 + 0.65 * envelope);
+    });
+  }, [seed]);
+
+  const filled = Math.round(progress * WAVE_BARS);
+
+  return (
+    <div
+      ref={ref}
+      role={active ? "slider" : undefined}
+      aria-label={active ? "Seek" : undefined}
+      aria-valuemin={active ? 0 : undefined}
+      aria-valuemax={active ? 100 : undefined}
+      aria-valuenow={active ? Math.round(progress * 100) : undefined}
+      onClick={active ? (e) => onSeek(e.clientX) : undefined}
+      className={
+        "flex h-7 min-w-0 flex-1 items-center gap-[2px]" +
+        (active ? " cursor-pointer" : "")
+      }
+    >
+      {heights.map((height, i) => (
+        <span
+          key={i}
+          className={cn(
+            "w-[3px] shrink-0 rounded-full transition-colors duration-150",
+            i < filled ? "bg-primary" : "bg-muted-foreground/35"
+          )}
+          style={{ height: `${Math.round(height * 100)}%` }}
+        />
+      ))}
+    </div>
   );
 }
