@@ -29,9 +29,17 @@ export function VoiceRow({
   const setEntryPinned = usePocket((s) => s.setEntryPinned);
   const editRequest = usePocket((s) => s.editRequest);
   const clearEditRequest = usePocket((s) => s.clearEditRequest);
-  const [renaming, setRenaming] = useState(false);
+  const [localRenaming, setLocalRenaming] = useState(false);
   const [name, setName] = useState(recording.name);
-  const rowRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLLIElement>(null);
+
+  // An outstanding store edit request (from search) drives renaming by
+  // derivation — the row is renaming while its request is open.
+  const editNonce =
+    editRequest?.kind === "voice" && editRequest.id === recording.id
+      ? editRequest.nonce
+      : null;
+  const renaming = localRenaming || editNonce !== null;
 
   useEffect(() => setName(recording.name), [recording.name]);
 
@@ -41,12 +49,6 @@ export function VoiceRow({
       usePocket.getState().setFocusItem(null);
     }
   }, [focused]);
-
-  useEffect(() => {
-    if (editRequest?.kind !== "voice" || editRequest.id !== recording.id) return;
-    setRenaming(true);
-    clearEditRequest();
-  }, [clearEditRequest, editRequest, recording.id]);
 
   const isCurrent = player?.recordingId === recording.id;
   const playing = isCurrent && playerPlaying;
@@ -59,12 +61,24 @@ export function VoiceRow({
     }
   };
 
+  const onKeyDownRow = (event: React.KeyboardEvent) => {
+    if ((event.target as HTMLElement).closest("button, input")) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      toggle();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      rowRef.current?.blur();
+    }
+  };
+
   const submitRename = async () => {
     const trimmed = name.trim();
     if (trimmed && trimmed !== recording.name) {
       await renameRecording(recording.id, trimmed);
     }
-    setRenaming(false);
+    setLocalRenaming(false);
+    clearEditRequest();
   };
 
   const togglePin = () =>
@@ -77,7 +91,7 @@ export function VoiceRow({
         variant="ghost"
         className="text-muted-foreground hover:text-foreground"
         aria-label="Rename"
-        onClick={() => setRenaming(true)}
+        onClick={() => setLocalRenaming(true)}
       >
         <Pencil />
       </Button>
@@ -98,11 +112,11 @@ export function VoiceRow({
   );
 
   return (
-    <div
+    <li
       ref={rowRef}
-      role="listitem"
       tabIndex={0}
       data-tauri-drag-region="deep"
+      onKeyDown={onKeyDownRow}
       className="group flex items-start gap-3 px-1 py-3"
     >
       <div className="relative mt-0.5 size-8 shrink-0">
@@ -127,7 +141,10 @@ export function VoiceRow({
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") void submitRename();
-                if (e.key === "Escape") setRenaming(false);
+                if (e.key === "Escape") {
+                  setLocalRenaming(false);
+                  clearEditRequest();
+                }
               }}
               onBlur={() => void submitRename()}
             />
@@ -152,7 +169,7 @@ export function VoiceRow({
           {hoverActions}
         </div>
       </div>
-    </div>
+    </li>
   );
 }
 

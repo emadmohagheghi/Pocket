@@ -65,10 +65,13 @@ export function DeleteWorkspaceDialog({ workspaceId, onClose }: Props) {
   const confirm = async () => {
     if (!workspaceId) return;
     setBusy(true);
-    await deleteWorkspace(workspaceId);
-    playPocketSound("destructive");
-    setBusy(false);
-    onClose();
+    try {
+      await deleteWorkspace(workspaceId);
+      playPocketSound("destructive");
+    } finally {
+      setBusy(false);
+      onClose();
+    }
   };
 
   return (

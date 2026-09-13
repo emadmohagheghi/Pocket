@@ -102,22 +102,22 @@ export function ItemList() {
     );
 
   return (
-    <div className="px-1 pt-1" role="list">
+    <div className="px-1 pt-1">
       {pinnedEntries.length > 0 ? (
         <section>
           <SectionLabel>Pinned</SectionLabel>
-          <div className="divide-y divide-border/70" role="list">
+          <ul className="divide-y divide-border/70">
             {pinnedEntries.map(renderEntry)}
-          </div>
+          </ul>
         </section>
       ) : null}
 
       {groups.map(({ label, entries }) => (
         <section key={label}>
           <SectionLabel>{label}</SectionLabel>
-          <div className="divide-y divide-border/70" role="list">
+          <ul className="divide-y divide-border/70">
             {entries.map(renderEntry)}
-          </div>
+          </ul>
         </section>
       ))}
     </div>
@@ -152,12 +152,9 @@ export function AddBar() {
   const stopAndSaveVoice = async () => {
     // Optimistic flag keeps the bar in voice mode across the stop() gap.
     setSavingVoice(true);
-    const result = await recorder.stop();
-    if (!result || result.blob.size === 0) {
-      setSavingVoice(false);
-      return;
-    }
     try {
+      const result = await recorder.stop();
+      if (!result || result.blob.size === 0) return;
       const buffer = await result.blob.arrayBuffer();
       await api.saveRecording(
         activeWorkspaceId ?? "",
@@ -239,13 +236,7 @@ export function AddBar() {
           </Button>
         </div>
       ) : (
-        <div
-          className={CAPTURE_BAR_CLASS}
-          onClick={(event) => {
-            if ((event.target as HTMLElement).closest("button, textarea")) return;
-            textareaRef.current?.focus();
-          }}
-        >
+        <div className={CAPTURE_BAR_CLASS}>
           <button
             type="submit"
             aria-label="Add note"
@@ -253,26 +244,30 @@ export function AddBar() {
           >
             <Plus className="size-4" />
           </button>
-          <Textarea
-            ref={textareaRef}
-            id={inputId}
-            value={value}
-            rows={1}
-            dir="auto"
-            autoComplete="off"
-            onChange={(event) => setValue(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void save();
-              } else if (event.key === "Escape") {
-                setValue("");
-              }
-            }}
-            placeholder="Add a note or a prompt…"
-            aria-label="Add a text item"
-            className="addbar-textarea max-h-[41px] min-h-0 resize-none overflow-y-auto rounded-none border-none !bg-transparent p-0 text-sm leading-snug shadow-none outline-none [overflow-wrap:anywhere] translate-y-[2px]"
-          />
+          {/* One control inside the label: clicking the flexible middle area
+              of the bar focuses the textarea. */}
+          <label htmlFor={inputId} className="block min-w-0 flex-1">
+            <Textarea
+              ref={textareaRef}
+              id={inputId}
+              value={value}
+              rows={1}
+              dir="auto"
+              autoComplete="off"
+              onChange={(event) => setValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void save();
+                } else if (event.key === "Escape") {
+                  setValue("");
+                }
+              }}
+              placeholder="Add a note or a prompt…"
+              aria-label="Add a text item"
+              className="addbar-textarea max-h-[41px] min-h-0 resize-none overflow-y-auto rounded-none border-none !bg-transparent p-0 text-sm leading-snug shadow-none outline-none [overflow-wrap:anywhere] translate-y-[2px]"
+            />
+          </label>
           <button
             type="button"
             onClick={() => {
