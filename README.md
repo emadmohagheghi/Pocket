@@ -107,6 +107,11 @@ Free code signing provided by SignPath.io, certificate by SignPath Foundation.
 Until the SignPath application is approved and the release workflow is updated,
 official artifacts must be treated as unsigned.
 
+## Credits
+
+Pocket's capture concept and visual design are inspired by
+[Copper](https://shadcn.com/copper), shadcn's capture app for macOS.
+
 ## License
 
 Pocket is licensed under the [MIT License](LICENSE).
