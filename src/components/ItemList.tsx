@@ -1,125 +1,378 @@
-import { useId, useMemo, useRef, useState } from "react";
-import { Loader2, Mic, Pause, Play, Plus, Square, X } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { Loader2, Mic, Pause, Play, Square, X } from "lucide-react";
 
 import { usePocket } from "@/store";
 import { api } from "@/lib/api";
 import { formatDuration } from "@/lib/utils";
 import { playPocketSound } from "@/lib/sound";
+import { toast } from "@/components/ui/toast";
 import { useRecorder } from "@/hooks/useRecorder";
 import type { Item, Recording } from "@/types";
 import { ItemRow } from "@/components/ItemRow";
 import { VoiceRow } from "@/components/VoiceList";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
 
-/** Small uppercase muted section label. */
-export function SectionLabel({ children }: { children: React.ReactNode }) {
+type FeedEntry =
+  | { key: string; kind: "text"; item: Item }
+  | { key: string; kind: "voice"; recording: Recording };
+
+const CAPTURE_BAR_CLASS =
+  "flex min-h-20 items-start gap-3 overflow-hidden rounded-[24px] border border-border/60 bg-card px-4 py-3 transition-colors focus-within:border-border";
+
+/**
+ * Live waveform while recording: consumes the recorder's per-frame mic
+ * level (levelRef, 0..1) and scrolls a bar history right-to-left, like
+ * Telegram's capture bar. Paused takes freeze the history.
+ */
+function LiveWaveform({
+  levelRef,
+  paused,
+}: {
+  levelRef: React.RefObject<number>;
+  paused: boolean;
+}) {
+  const BARS = 48;
+  const barsRef = useRef<number[]>(Array(BARS).fill(0.06));
+  const [, tickState] = useState(0);
+
+  useEffect(() => {
+    let raf = 0;
+    let last = 0;
+    const tick = (t: number) => {
+      raf = requestAnimationFrame(tick);
+      if (t - last < 50) return; // 20 fps history is smooth enough
+      last = t;
+      const bars = barsRef.current;
+      bars.push(paused ? 0.06 : (levelRef.current ?? 0));
+      bars.shift();
+      tickState((n) => n + 1);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [levelRef, paused]);
+
   return (
-    <p className="px-1 pb-1 pt-6 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70 first:pt-0">
-      {children}
-    </p>
+    <div className="flex h-5 min-w-0 flex-1 items-center gap-[2px]" aria-hidden>
+      {barsRef.current.map((level, i) => (
+        <span
+          key={i}
+          className={
+            "min-w-[2px] flex-1 rounded-full " +
+            (paused ? "bg-muted-foreground/30" : "bg-red-500/60")
+          }
+          style={{ height: `${Math.round(Math.max(0.1, level) * 100)}%` }}
+        />
+      ))}
+    </div>
   );
 }
 
-function groupLabel(createdAt: number): string {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  if (createdAt >= startOfToday) return "Today";
-  if (createdAt >= startOfToday - 86400000) return "Yesterday";
-  return "Earlier";
+/**
+ * Single unified feed: text items and voice recordings together, oldest at
+ * the top and newest at the bottom like a chat. Auto-scrolls while the
+ * reader is at the live edge; a jump-to-latest button appears otherwise.
+ */
+export interface FeedActions {
+  selectedIds: Set<string>;
+  toggleSelect: (id: string) => void;
+  clearSelection: () => void;
+  copySelected: (asList: boolean) => void;
+  toggleDoneSelected: () => void;
+  requestEdit: (id: string) => void;
+  requestExpand: (id: string) => void;
+  mergeSelected: () => void;
+  moveSelectedTo: (workspaceId: string, workspaceName: string) => void;
+  deleteSelected: () => void;
+  selectedTextIds: string[];
 }
 
-type FeedEntry =
-  | { key: string; createdAt: number; kind: "text"; item: Item }
-  | { key: string; createdAt: number; kind: "voice"; recording: Recording };
-
-const CAPTURE_BAR_CLASS =
-  "flex items-center gap-2.5 rounded-full border border-border/60 bg-muted/50 px-3.5 py-2 transition-colors focus-within:border-border";
-
-/** Single unified feed: text items and voice recordings together, newest first. */
 export function ItemList() {
   const data = usePocket((s) => s.data);
   const focusItemId = usePocket((s) => s.focusItemId);
+  const setEntryDone = usePocket((s) => s.setEntryDone);
+  const updateItem = usePocket((s) => s.updateItem);
+  const deleteItem = usePocket((s) => s.deleteItem);
+  const deleteRecording = usePocket((s) => s.deleteRecording);
 
-  const items = useMemo<Item[]>(() => data?.items ?? [], [data]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [expandRequest, setExpandRequest] = useState<{ id: string; nonce: number } | null>(null);
+  const [editRequest, setEditRequest] = useState<{ id: string; nonce: number } | null>(null);
+  const nonce = useRef(0);
 
-  const { pinnedEntries, groups } = useMemo(() => {
-    const entries: FeedEntry[] = [
-      ...items.map(
-        (item): FeedEntry => ({
-          key: item.id,
-          createdAt: item.createdAt,
-          kind: "text",
-          item,
-        })
+  const entries = useMemo<FeedEntry[]>(() => {
+    return [
+      ...(data?.items ?? []).map(
+        (item): FeedEntry => ({ key: item.id, kind: "text", item })
       ),
       ...(data?.recordings ?? []).map(
         (recording): FeedEntry => ({
           key: recording.id,
-          createdAt: recording.createdAt,
           kind: "voice",
           recording,
         })
       ),
-    ].sort((a, b) => b.createdAt - a.createdAt);
-    const pinnedEntries = entries.filter((entry) =>
-      entry.kind === "text" ? entry.item.pinned : entry.recording.pinned
-    );
-    const chronologicalEntries = entries.filter((entry) =>
-      entry.kind === "text" ? !entry.item.pinned : !entry.recording.pinned
-    );
-    const order = ["Today", "Yesterday", "Earlier"];
-    const map = new Map<string, FeedEntry[]>();
-    for (const entry of chronologicalEntries) {
-      const label = groupLabel(entry.createdAt);
-      if (!map.has(label)) map.set(label, []);
-      map.get(label)!.push(entry);
-    }
-    return {
-      pinnedEntries,
-      groups: order
-        .filter((label) => map.has(label))
-        .map((label) => ({ label, entries: map.get(label)! })),
-    };
-  }, [items, data]);
+    ].sort((a, b) => {
+      const aCreated = a.kind === "text" ? a.item.createdAt : a.recording.createdAt;
+      const bCreated = b.kind === "text" ? b.item.createdAt : b.recording.createdAt;
+      return aCreated - bCreated;
+    });
+  }, [data]);
 
-  const total = pinnedEntries.length + groups.reduce((n, g) => n + g.entries.length, 0);
-  if (!data || total === 0) return null;
+  // Selection helpers ------------------------------------------------------------
+
+  const selectedTextIds = useMemo(
+    () =>
+      entries
+        .filter(
+          (e): e is { key: string; kind: "text"; item: Item } =>
+            e.kind === "text" && selectedIds.has(e.key)
+        )
+        .map((e) => e.item.id),
+    [entries, selectedIds]
+  );
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const copySelected = useCallback(
+    (asList: boolean) => {
+      const contents = entries
+        .filter((e) => selectedIds.has(e.key))
+        .map((e) =>
+          e.kind === "text" ? e.item.content : e.recording.name + " (voice note)"
+        );
+      if (contents.length === 0) return;
+      const text = asList
+        ? contents.map((c, i) => `${i + 1}. ${c}`).join("\n")
+        : contents.join("\n");
+      void api
+        .copyToClipboard(text)
+        .then(() => {
+          playPocketSound("copy");
+          toast.add({
+            title: asList ? "Copied as List" : "Copied",
+            type: "success",
+          });
+        })
+        .catch(() => playPocketSound("error"));
+    },
+    [entries, selectedIds]
+  );
+
+  const toggleDoneSelected = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    let anyDone = false;
+    for (const entry of entries) {
+      if (!selectedIds.has(entry.key)) continue;
+      const done = entry.kind === "text" ? entry.item.pinned : entry.recording.pinned;
+      if (!done) anyDone = true;
+      if (entry.kind === "text") setEntryDone("text", entry.item.id, !done);
+      else setEntryDone("voice", entry.recording.id, !done);
+    }
+    toast.add({
+      title: anyDone ? "Marked as Done" : "Marked as Not Done",
+      type: "success",
+    });
+  }, [entries, selectedIds, setEntryDone]);
+
+  const requestEdit = useCallback((id: string) => {
+    setEditRequest({ id, nonce: ++nonce.current });
+  }, []);
+
+  const requestExpand = useCallback((id: string) => {
+    setExpandRequest({ id, nonce: ++nonce.current });
+  }, []);
+
+  const mergeSelected = useCallback(() => {
+    if (selectedTextIds.length < 2) return;
+    const selected = entries.filter(
+      (e): e is { key: string; kind: "text"; item: Item } =>
+        e.kind === "text" && selectedIds.has(e.key)
+    );
+    // Oldest note is the merge target so its position in the feed holds.
+    const ordered = [...selected].sort((a, b) => a.item.createdAt - b.item.createdAt);
+    const merged = ordered.map((e) => e.item.content.trim()).join("\n\n");
+    void updateItem(ordered[0].item.id, { content: merged });
+    for (const e of ordered.slice(1)) void deleteItem(e.item.id);
+    playPocketSound("success");
+    toast.add({ title: "Notes Merged", type: "success" });
+    setSelectedIds(new Set());
+  }, [entries, selectedIds, selectedTextIds, updateItem, deleteItem]);
+
+  const deleteSelected = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    playPocketSound("destructive");
+    for (const entry of entries) {
+      if (!selectedIds.has(entry.key)) continue;
+      if (entry.kind === "text") void deleteItem(entry.item.id);
+      else void deleteRecording(entry.recording.id);
+    }
+    toast.add({ title: "Deleted", type: "success" });
+    setSelectedIds(new Set());
+  }, [entries, selectedIds, deleteItem, deleteRecording]);
+
+  const moveSelectedTo = useCallback(
+    (workspaceId: string, workspaceName: string) => {
+      if (selectedTextIds.length === 0) return;
+      void (async () => {
+        const wsId = usePocket.getState().settings?.activeWorkspaceId ?? "";
+        const moving = entries.filter(
+          (e): e is { key: string; kind: "text"; item: Item } =>
+            e.kind === "text" && selectedIds.has(e.key)
+        );
+        for (const e of moving) {
+          try {
+            await api.createItem(workspaceId, {
+              itemType: "text",
+              content: e.item.content,
+              title: e.item.title,
+              url: e.item.url,
+            });
+            await api.deleteItem(wsId, e.item.id);
+          } catch {
+            playPocketSound("error");
+            return;
+          }
+        }
+        playPocketSound("success");
+        toast.add({ title: `Moved to ${workspaceName}`, type: "success" });
+        setSelectedIds(new Set());
+      })();
+    },
+    [entries, selectedIds, selectedTextIds]
+  );
+
+  // Bulk shortcuts: active whenever a selection exists and the user is not
+  // typing in a field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      )
+        return;
+      const mod = e.ctrlKey || e.metaKey;
+      // Ctrl+A toggles select-all / deselect-all; Ctrl+D always deselects.
+      if (mod && !e.shiftKey && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        if (entries.length > 0 && selectedIds.size === entries.length) {
+          clearSelection();
+        } else {
+          setSelectedIds(new Set(entries.map((entry) => entry.key)));
+        }
+        return;
+      }
+      if (mod && !e.shiftKey && (e.key === "d" || e.key === "D")) {
+        e.preventDefault();
+        clearSelection();
+        return;
+      }
+      if (selectedIds.size === 0) return;
+      if (mod && !e.shiftKey && (e.key === "c" || e.key === "C")) {
+        e.preventDefault();
+        copySelected(false);
+      } else if (mod && e.shiftKey && (e.key === "c" || e.key === "C")) {
+        e.preventDefault();
+        copySelected(true);
+      } else if (mod && e.shiftKey && (e.key === "m" || e.key === "M")) {
+        e.preventDefault();
+        mergeSelected();
+      } else if (e.key === " ") {
+        e.preventDefault();
+        toggleDoneSelected();
+      } else if (e.key === "Enter" && selectedTextIds.length === 1) {
+        e.preventDefault();
+        requestEdit(selectedTextIds[0]);
+      } else if (e.key === "Escape") {
+        clearSelection();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    entries,
+    selectedIds,
+    selectedTextIds,
+    copySelected,
+    mergeSelected,
+    toggleDoneSelected,
+    requestEdit,
+    clearSelection,
+  ]);
+
+  const actions: FeedActions = {
+    selectedIds,
+    toggleSelect,
+    clearSelection,
+    copySelected,
+    toggleDoneSelected,
+    requestEdit,
+    requestExpand,
+    mergeSelected,
+    moveSelectedTo,
+    deleteSelected,
+    selectedTextIds,
+  };
 
   const renderEntry = (entry: FeedEntry) =>
     entry.kind === "text" ? (
       <ItemRow
-        key={entry.key}
         item={entry.item}
         focused={entry.item.id === focusItemId}
+        selected={selectedIds.has(entry.key)}
+        toggleSelect={toggleSelect}
+        editRequest={editRequest && editRequest.id === entry.key ? editRequest : null}
+        expandRequest={expandRequest && expandRequest.id === entry.key ? expandRequest : null}
+        actions={actions}
       />
     ) : (
       <VoiceRow
-        key={entry.key}
         recording={entry.recording}
         focused={entry.recording.id === focusItemId}
+        selected={selectedIds.has(entry.key)}
+        toggleSelect={toggleSelect}
+        actions={actions}
       />
     );
 
-  return (
-    <div className="px-1 pt-1">
-      {pinnedEntries.length > 0 ? (
-        <section>
-          <SectionLabel>Pinned</SectionLabel>
-          <ul className="divide-y divide-border/70">
-            {pinnedEntries.map(renderEntry)}
-          </ul>
-        </section>
-      ) : null}
+  if (!data || entries.length === 0) return null;
 
-      {groups.map(({ label, entries }) => (
-        <section key={label}>
-          <SectionLabel>{label}</SectionLabel>
-          <ul className="divide-y divide-border/70">
-            {entries.map(renderEntry)}
-          </ul>
-        </section>
-      ))}
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+        <MessageScroller>
+          <MessageScrollerViewport>
+            <MessageScrollerContent className="px-3 py-2">
+              {entries.map((entry) => (
+                <MessageScrollerItem key={entry.key} messageId={entry.key}>
+                  {renderEntry(entry)}
+                </MessageScrollerItem>
+              ))}
+            </MessageScrollerContent>
+          </MessageScrollerViewport>
+          <MessageScrollerButton />
+        </MessageScroller>
+      </MessageScrollerProvider>
     </div>
   );
 }
@@ -149,6 +402,31 @@ export function AddBar() {
     }
   };
 
+  // Native double-shift hold lands here: start on press, save on release.
+  // Refs keep the listeners stable while the recorder state churns.
+  const recorderSnapshotRef = useRef(recorder);
+  recorderSnapshotRef.current = recorder;
+  const stopAndSaveRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => {
+    const onStart = () => {
+      const r = recorderSnapshotRef.current;
+      if (!r.recording && !r.paused && !r.isBusy()) {
+        playPocketSound("tap");
+        void r.start();
+      }
+    };
+    const onStop = () => {
+      const r = recorderSnapshotRef.current;
+      if (r.recording) void stopAndSaveRef.current();
+    };
+    window.addEventListener("pocket-voice-hold-start", onStart);
+    window.addEventListener("pocket-voice-hold-stop", onStop);
+    return () => {
+      window.removeEventListener("pocket-voice-hold-start", onStart);
+      window.removeEventListener("pocket-voice-hold-stop", onStop);
+    };
+  }, []);
+
   const stopAndSaveVoice = async () => {
     // Optimistic flag keeps the bar in voice mode across the stop() gap.
     setSavingVoice(true);
@@ -170,6 +448,7 @@ export function AddBar() {
       setSavingVoice(false);
     }
   };
+  stopAndSaveRef.current = stopAndSaveVoice;
 
   return (
     <form
@@ -178,72 +457,101 @@ export function AddBar() {
         void save();
       }}
     >
-      {voiceActive ? (
-        <div className={CAPTURE_BAR_CLASS}>
-          <span
-            className={
-              "size-2 shrink-0 rounded-full " +
-              (recorder.paused
-                ? "bg-amber-500"
-                : "bg-red-500" + (recorder.recording ? " animate-pulse" : ""))
-            }
-            aria-hidden
-          />
-          <span
-            className="min-w-0 flex-1 font-mono text-xs tabular-nums text-muted-foreground"
-            aria-live="polite"
-          >
-            {formatDuration(recorder.elapsedMs)}
-          </span>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
-            disabled={savingVoice}
-            aria-label={recorder.paused ? "Resume recording" : "Pause recording"}
-            onClick={() => (recorder.paused ? recorder.resume() : recorder.pause())}
-          >
-            {recorder.paused ? <Play /> : <Pause />}
-          </Button>
-          <Button
-            type="button"
-            size="icon-sm"
-            className="shrink-0 rounded-full bg-red-500 text-white hover:bg-red-600"
-            disabled={savingVoice}
-            aria-label="Save recording"
-            onClick={() => void stopAndSaveVoice()}
-          >
-            {savingVoice ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <Square className="size-3.5 fill-current" />
-            )}
-          </Button>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
-            disabled={savingVoice}
-            aria-label="Discard recording"
-            onClick={() => {
-              recorder.cancel();
-              playPocketSound("close");
-            }}
-          >
-            <X />
-          </Button>
-        </div>
-      ) : (
-        <div className={CAPTURE_BAR_CLASS}>
-          <button
-            type="submit"
-            aria-label="Add note"
-            className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground"
-          >
-            <Plus className="size-4" />
-          </button>
+      <div className={CAPTURE_BAR_CLASS}>
+        <AnimatePresence mode="wait" initial={false}>
+          {voiceActive ? (
+            <motion.div
+              key="voice"
+              className="w-full self-center"
+              initial={{ opacity: 0, scale: 0.96, filter: "blur(4px)" }}
+              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+              exit={{ opacity: 0, scale: 0.96, filter: "blur(4px)" }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            >
+            <div className="flex w-full items-center gap-2.5">
+              <span className="flex shrink-0 items-center gap-2">
+                <span
+                  className={
+                    "size-2 rounded-full " +
+                    (recorder.paused
+                      ? "bg-amber-500"
+                      : "bg-red-500" + (recorder.recording ? " animate-pulse" : ""))
+                  }
+                  aria-hidden
+                />
+                <span
+                  className="font-mono text-xs tabular-nums text-muted-foreground"
+                  aria-live="polite"
+                >
+                  {formatDuration(recorder.elapsedMs)}
+                </span>
+              </span>
+              <div className="min-w-0 flex-1" />
+              <motion.div
+                className="flex shrink-0 items-center gap-0.5"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.18, delay: 0.05, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
+                  disabled={savingVoice}
+                  aria-label={recorder.paused ? "Resume recording" : "Pause recording"}
+                  onClick={() => (recorder.paused ? recorder.resume() : recorder.pause())}
+                >
+                  {recorder.paused ? <Play /> : <Pause />}
+                </Button>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  className="rounded-full bg-red-500 text-white hover:bg-red-600"
+                  disabled={savingVoice}
+                  aria-label="Save recording"
+                  onClick={() => void stopAndSaveVoice()}
+                >
+                  {savingVoice ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Square className="size-3.5 fill-current" />
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
+                  disabled={savingVoice}
+                  aria-label="Discard recording"
+                  onClick={() => {
+                    recorder.cancel();
+                    playPocketSound("close");
+                  }}
+                >
+                  <X />
+                </Button>
+              </motion.div>
+            </div>
+            <div className="mt-1 w-full">
+              <LiveWaveform levelRef={recorder.levelRef} paused={recorder.paused} />
+            </div>
+          </motion.div>
+        ) : (
+            <motion.div
+              key="text"
+              className="flex w-full items-start gap-3"
+              initial={{ opacity: 0, scale: 0.96, filter: "blur(4px)" }}
+              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+              exit={{ opacity: 0, scale: 0.96, filter: "blur(4px)" }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            >
+            <button
+              type="submit"
+              aria-label="Add note"
+              className="size-5 shrink-0 rounded-full border-[1.5px] border-muted-foreground/60"
+            />
           {/* One control inside the label: clicking the flexible middle area
               of the bar focuses the textarea. */}
           <label htmlFor={inputId} className="block min-w-0 flex-1">
@@ -251,7 +559,6 @@ export function AddBar() {
               ref={textareaRef}
               id={inputId}
               value={value}
-              rows={1}
               dir="auto"
               autoComplete="off"
               onChange={(event) => setValue(event.target.value)}
@@ -265,24 +572,31 @@ export function AddBar() {
               }}
               placeholder="Add a note or a prompt…"
               aria-label="Add a text item"
-              className="addbar-textarea max-h-[41px] min-h-0 resize-none overflow-y-auto rounded-none border-none !bg-transparent p-0 text-sm leading-snug shadow-none outline-none [overflow-wrap:anywhere] translate-y-[2px]"
+              rows={2}
+              className="addbar-textarea max-h-32 min-h-0 resize-none overflow-y-auto rounded-none border-none !bg-transparent p-0 text-sm leading-5 shadow-none outline-none [overflow-wrap:anywhere]"
             />
           </label>
           <button
             type="button"
             onClick={() => {
               playPocketSound("open");
+              playPocketSound("tap");
               void recorder.start();
             }}
             aria-label="Record a voice note"
-            className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="mt-0 flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <Mic className="size-4" />
           </button>
-        </div>
-      )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
       {recorder.error && (
-        <p className="mt-1 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
+        <p
+          key={recorder.error}
+          className="pocket-shake mt-1 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs text-destructive"
+        >
           {recorder.error}
         </p>
       )}

@@ -29,18 +29,18 @@ pub fn show_voice_capture(app: &AppHandle) {
     show_capture(app, "voice");
 }
 
-/// Show voice capture for the Right-Shift press-and-hold gesture. The mode is
-/// distinct so the frontend knows that releasing Right Shift must save.
+/// Hold-to-record targets the MAIN window now: reveal it and tell the
+/// frontend's add-bar recorder to start. No quick-capture popup.
 pub fn show_held_voice_capture(app: &AppHandle) {
-    debug_log("held voice capture requested");
-    show_capture(app, "voice-hold");
+    debug_log("held voice capture -> main window record mode");
+    crate::commands::show_main_window(app);
+    let _ = app.emit_to("main", "voice-hold-start", ());
 }
 
-/// Tell the already-loaded capture webview that Right Shift was released.
-/// The frontend waits for MediaRecorder startup when needed, then saves once.
+/// Tell the main window that Shift was released: stop the recorder and save.
 pub fn finish_held_voice_capture(app: &AppHandle) {
     debug_log("held voice capture released -> requesting stop and save");
-    let _ = app.emit_to("quick-capture", "voice-hold-release", ());
+    let _ = app.emit_to("main", "voice-hold-release", ());
 }
 
 fn show_capture(app: &AppHandle, mode: &str) {
@@ -363,6 +363,9 @@ pub mod double_shift {
     /// latency), while a tap-hold resolves to voice after this threshold.
     const HOLD_FOR_VOICE_MS: u64 = 400;
     const HOLD_POLL_MS: u64 = 15;
+    /// Consecutive "key up" polls required to trust a release during the
+    /// hold window (3 x 15ms = 45ms of sustained up state).
+    const HOLD_RELEASE_DEBOUNCE_POLLS: u32 = 3;
     /// Reconcile the hook state with the real keyboard often enough to catch
     /// a release even when Windows drops the corresponding low-level event.
     const RELEASE_RECONCILE_MS: u64 = 15;
@@ -795,10 +798,19 @@ pub mod double_shift {
                 // is seen instead of adding a fixed delay.
                 let mut elapsed_ms: u64 = 0;
                 let mut released_early = false;
+                // A single "up" sample can be a bounce or an OS sampling
+                // glitch and would wrongly cancel the hold. Require several
+                // consecutive up polls before treating Shift as released.
+                let mut up_streak: u32 = 0;
                 while elapsed_ms < HOLD_FOR_VOICE_MS {
-                    if !is_shift_physically_down(ShiftSide::Left) {
-                        released_early = true;
-                        break;
+                    if is_shift_physically_down(ShiftSide::Left) {
+                        up_streak = 0;
+                    } else {
+                        up_streak += 1;
+                        if up_streak >= HOLD_RELEASE_DEBOUNCE_POLLS {
+                            released_early = true;
+                            break;
+                        }
                     }
                     std::thread::sleep(std::time::Duration::from_millis(HOLD_POLL_MS));
                     elapsed_ms += HOLD_POLL_MS;
@@ -819,7 +831,7 @@ pub mod double_shift {
                         return;
                     }
                     if mode == "voice" {
-                        super::show_voice_capture(&for_main);
+                        super::show_held_voice_capture(&for_main);
                     } else {
                         super::save_text_capture_from_hotkey(&for_main);
                     }
@@ -832,10 +844,16 @@ pub mod double_shift {
     /// holding the second press starts recording and release saves it.
     fn watch_right_hold(app_handle: AppHandle) {
         let mut elapsed_ms: u64 = 0;
+        let mut up_streak: u32 = 0;
         while elapsed_ms < HOLD_FOR_VOICE_MS {
-            if !is_shift_physically_down(ShiftSide::Right) {
-                debug_log("right double-shift released early -> no action");
-                return;
+            if is_shift_physically_down(ShiftSide::Right) {
+                up_streak = 0;
+            } else {
+                up_streak += 1;
+                if up_streak >= HOLD_RELEASE_DEBOUNCE_POLLS {
+                    debug_log("right double-shift released early -> no action");
+                    return;
+                }
             }
             std::thread::sleep(std::time::Duration::from_millis(HOLD_POLL_MS));
             elapsed_ms += HOLD_POLL_MS;
@@ -851,7 +869,16 @@ pub mod double_shift {
             super::show_held_voice_capture(&for_open);
         });
 
-        while is_shift_physically_down(ShiftSide::Right) {
+        let mut release_streak: u32 = 0;
+        loop {
+            if is_shift_physically_down(ShiftSide::Right) {
+                release_streak = 0;
+            } else {
+                release_streak += 1;
+                if release_streak >= HOLD_RELEASE_DEBOUNCE_POLLS {
+                    break;
+                }
+            }
             std::thread::sleep(std::time::Duration::from_millis(HOLD_POLL_MS));
         }
 

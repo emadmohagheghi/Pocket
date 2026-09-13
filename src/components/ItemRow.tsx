@@ -1,41 +1,67 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  Check,
   ChevronDown,
-  ChevronUp,
   Copy,
-  ExternalLink,
+  FolderInput,
+  List,
+  Merge,
   Pencil,
+  StretchHorizontal,
   Trash2,
 } from "lucide-react";
 
 import { usePocket } from "@/store";
-import { api } from "@/lib/api";
-import { cn, formatRelative, looksLikeUrl } from "@/lib/utils";
-import { playPocketSound } from "@/lib/sound";
+import type { FeedActions } from "@/components/ItemList";
+import { cn, looksLikeUrl } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
-import { PinButton } from "@/components/PinButton";
 import type { Item } from "@/types";
 
 interface Props {
   item: Item;
   focused: boolean;
+  selected: boolean;
+  toggleSelect: (id: string) => void;
+  editRequest: { id: string; nonce: number } | null;
+  expandRequest: { id: string; nonce: number } | null;
+  actions: FeedActions;
 }
 
-export function ItemRow({ item, focused }: Props) {
+export function ItemRow({
+  item,
+  focused,
+  selected,
+  toggleSelect,
+  editRequest,
+  expandRequest,
+  actions,
+}: Props) {
   // Field selectors: rows must not re-render on unrelated store traffic such
   // as voice-player progress while a recording plays.
   const updateItem = usePocket((s) => s.updateItem);
-  const deleteItem = usePocket((s) => s.deleteItem);
-  const setEntryPinned = usePocket((s) => s.setEntryPinned);
+  const setEntryDone = usePocket((s) => s.setEntryDone);
   const clearEditRequest = usePocket((s) => s.clearEditRequest);
-  const editRequest = usePocket((s) => s.editRequest);
+  const workspaces = usePocket((s) => s.workspaces);
+  const activeWorkspaceId = usePocket((s) => s.settings?.activeWorkspaceId);
   const previewLineLimit = usePocket((s) => s.settings?.notePreviewLines ?? 5);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [isExpandable, setIsExpandable] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [localEditing, setLocalEditing] = useState(false);
@@ -49,31 +75,42 @@ export function ItemRow({ item, focused }: Props) {
     ? { WebkitLineClamp: previewLineLimit }
     : undefined;
 
-  // An outstanding store edit request (from search) drives editing by
-  // derivation — the row is editing while its request is open, so no effect
-  // is needed to copy the request into local state.
-  const editNonce =
-    editRequest?.kind === "text" && editRequest.id === item.id
-      ? editRequest.nonce
-      : null;
-  const editing = localEditing || editNonce !== null;
+  // An outstanding edit request (from search or the bulk Enter shortcut)
+  // drives editing by derivation — the row is editing while its request is
+  // open.
+  const editing = localEditing || editRequest !== null;
+  const done = item.pinned;
 
   useEffect(() => {
     if (focused) {
       rowRef.current?.scrollIntoView({ block: "center" });
-      rowRef.current?.focus();
       usePocket.getState().setFocusItem(null);
     }
   }, [focused]);
 
   useEffect(() => {
-    if (editing) {
-      setDraft(item.content);
-      requestAnimationFrame(() => {
-        editRef.current?.focus();
-        editRef.current?.setSelectionRange(item.content.length, item.content.length);
-      });
-    }
+    if (!editing) return;
+    setDraft(item.content);
+    // Radix restores focus to the card after the context menu closes —
+    // after our first frame. Keep claiming focus until the field has it,
+    // caret at the end, or entering edit from the menu appears dead.
+    const focus = () => {
+      if (document.activeElement === editRef.current) return true;
+      editRef.current?.focus();
+      editRef.current?.setSelectionRange(item.content.length, item.content.length);
+      return document.activeElement === editRef.current;
+    };
+    let raf = 0;
+    const tries = [0, 50, 150].map((delay) =>
+      window.setTimeout(() => {
+        if (focus()) return;
+        if (delay === 0) raf = requestAnimationFrame(() => void focus());
+      }, delay)
+    );
+    return () => {
+      tries.forEach(clearTimeout);
+      cancelAnimationFrame(raf);
+    };
   }, [editing, item.content]);
 
   useLayoutEffect(() => {
@@ -123,17 +160,19 @@ export function ItemRow({ item, focused }: Props) {
     };
   }, [editing, expanded]);
 
-  const copy = async () => {
-    try {
-      await api.copyToClipboard(item.url ?? item.content);
-      playPocketSound("copy");
-    } catch {
-      playPocketSound("error");
-    }
-  };
+  const editStartedAt = useRef(0);
+  useEffect(() => {
+    if (editing) editStartedAt.current = Date.now();
+  }, [editing]);
+
+  // Bulk Expand action (single request per selection change).
+  useEffect(() => {
+    if (expandRequest) setExpanded(true);
+  }, [expandRequest]);
 
   const endEditing = () => {
     setLocalEditing(false);
+    if (editRequest) actions.requestEdit("__cancel__");
     clearEditRequest();
   };
 
@@ -144,8 +183,6 @@ export function ItemRow({ item, focused }: Props) {
     }
     endEditing();
   };
-
-  const togglePin = () => void setEntryPinned("text", item.id, !item.pinned);
 
   const onKeyDownRow = (e: React.KeyboardEvent) => {
     if (
@@ -165,18 +202,19 @@ export function ItemRow({ item, focused }: Props) {
   // Link rendering is purely visual: any text item that *is* a URL renders
   // as a clickable link. Detected at render time, never persisted as a type.
   const isLink = looksLikeUrl(item.content) || (item.url !== null && looksLikeUrl(item.url));
-  const linkTarget = item.url ?? item.content;
 
-  // One shared editing field for both the collapsible and plain layouts.
+  // One shared editing field: the whole card becomes the textarea.
   const editField = (
     <Textarea
       ref={editRef}
       dir="auto"
+      autoFocus
       value={draft}
       rows={1}
-      className="min-h-0 resize-none overflow-hidden border-none bg-transparent p-0 text-sm leading-snug shadow-none [overflow-wrap:anywhere] focus-visible:ring-0"
+      className="field-sizing-content max-h-64 w-full resize-none border-none bg-transparent p-0 text-sm leading-snug shadow-none outline-none [overflow-wrap:anywhere]"
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={(e) => {
+        // Enter commits, Shift+Enter is a newline, Escape cancels.
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
           void saveEdit();
@@ -184,156 +222,245 @@ export function ItemRow({ item, focused }: Props) {
           endEditing();
         }
       }}
-      onBlur={() => void saveEdit()}
+      // Guarded blur-save: the context menu's close shuffles focus through
+      // the card right after Edit is chosen, which must not close the
+      // editor (and looks like Edit doing nothing).
+      onBlur={() => {
+        if (Date.now() - editStartedAt.current > 250) void saveEdit();
+      }}
     />
   );
 
-  const hoverActions = (
-    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-      <PinButton pinned={item.pinned} onToggle={togglePin} />
-      {isLink ? (
-        <RowButton
-          label="Open in browser"
-          icon={<ExternalLink />}
-          onClick={() => void api.openUrl(linkTarget).catch(() => {})}
-        />
-      ) : null}
-      <RowButton label="Copy" icon={<Copy />} onClick={() => void copy()} />
-      <RowButton
-        label="Edit"
-        icon={<Pencil />}
-        onClick={() => setLocalEditing(true)}
-      />
-      <RowButton
-        label="Delete"
-        icon={<Trash2 />}
-        destructive
-        onClick={() => {
-          playPocketSound("destructive");
-          void deleteItem(item.id);
+  /** Right-click selects the card first, so every menu action can operate
+      on the whole selection (single click-select + right-click = same). */
+  const ensureSelected = () => {
+    if (!selected) toggleSelect(item.id);
+  };
+
+  const { deleteSelected } = actions;
+
+  const contextMenu = (
+    <ContextMenuContent>
+      <ContextMenuItem
+        onSelect={() => {
+          ensureSelected();
+          actions.copySelected(false);
         }}
-      />
-    </div>
+      >
+        <Copy /> Copy
+        <ContextMenuShortcut>⌃C</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem
+        onSelect={() => {
+          ensureSelected();
+          actions.copySelected(true);
+        }}
+      >
+        <List /> Copy as List
+        <ContextMenuShortcut>⇧⌃C</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem
+        onSelect={() => {
+          ensureSelected();
+          actions.toggleDoneSelected();
+        }}
+      >
+        <Check /> {done ? "Mark as Not Done" : "Mark as Done"}
+        <ContextMenuShortcut>Space</ContextMenuShortcut>
+      </ContextMenuItem>
+      {canCollapse && !expanded ? (
+        <ContextMenuItem onSelect={() => actions.requestExpand(item.id)}>
+          <StretchHorizontal /> Expand
+        </ContextMenuItem>
+      ) : null}
+      <ContextMenuSeparator />
+      <ContextMenuItem
+        onSelect={() => {
+          ensureSelected();
+          if (actions.selectedTextIds.length === 1) {
+            actions.requestEdit(actions.selectedTextIds[0]);
+          } else {
+            setLocalEditing(true);
+          }
+        }}
+      >
+        <Pencil /> Edit
+        <ContextMenuShortcut>⏎</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem
+        disabled={actions.selectedTextIds.length < 2}
+        onSelect={() => {
+          actions.mergeSelected();
+        }}
+      >
+        <Merge /> Merge Notes
+        <ContextMenuShortcut>⇧⌃M</ContextMenuShortcut>
+      </ContextMenuItem>
+      {workspaces.length > 1 ? (
+        <ContextMenuSub>
+          <ContextMenuSubTrigger disabled={actions.selectedTextIds.length === 0}>
+            <FolderInput /> Move to
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            {workspaces
+              .filter((w) => w.id !== activeWorkspaceId)
+              .map((w) => (
+                <ContextMenuItem key={w.id} onSelect={() => actions.moveSelectedTo(w.id, w.name)}>
+                  {w.name}
+                </ContextMenuItem>
+              ))}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      ) : null}
+      <ContextMenuSeparator />
+      <ContextMenuItem variant="destructive" onSelect={deleteSelected}>
+        <Trash2 /> Delete
+      </ContextMenuItem>
+    </ContextMenuContent>
   );
 
   return (
-    <li
-      ref={rowRef}
-      tabIndex={0}
-      data-tauri-drag-region="deep"
-      data-item-id={item.id}
-      onKeyDown={onKeyDownRow}
-      className="group flex items-start gap-3 px-1 py-3"
-    >
-      <ItemBody
-        item={item}
-        canCollapse={canCollapse}
-        collapseEnabled={collapseEnabled}
-        previewStyle={previewStyle}
-        isLink={isLink}
-        editing={editing}
-        editField={editField}
-        expanded={expanded}
-        setExpanded={setExpanded}
-        previewRef={previewRef}
-        hoverActions={hoverActions}
-      />
-    </li>
+    <ContextMenu onOpenChange={(open) => setMenuOpen(open)}>
+      <ContextMenuTrigger asChild>
+        <li
+          ref={rowRef}
+          tabIndex={0}
+          data-item-id={item.id}
+          onKeyDown={onKeyDownRow}
+          onClick={(e) => {
+            // Plain click selects (todo-style); interactive children opt out.
+            if (editing) return;
+            if ((e.target as HTMLElement).closest("button, textarea, input, a")) return;
+            toggleSelect(item.id);
+          }}
+          onContextMenu={() => {
+            if (!selected) toggleSelect(item.id);
+          }}
+          className={
+            "group flex items-start gap-3 rounded-[24px] border bg-card px-3 py-2.5 transition-colors " +
+            (menuOpen || selected
+              ? "border-blue-500"
+              : "border-border/60 hover:border-border")
+          }
+        >
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={done}
+            aria-label={done ? "Mark as not done" : "Mark as done"}
+            onClick={(e) => {
+              e.stopPropagation();
+              void setEntryDone("text", item.id, !done);
+            }}
+            className="t-check flex size-5 shrink-0 items-center justify-center rounded-full border-[1.5px]"
+          >
+            <svg
+              viewBox="0 0 10.1668 10.1668"
+              className="size-2"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M1 5.52L3.92 9.17L9.17 1" />
+            </svg>
+          </button>
+          {editing ? (
+            <div className="min-w-0 flex-1">{editField}</div>
+          ) : (
+            <ItemBody
+              item={item}
+              done={done}
+              canCollapse={canCollapse}
+              collapseEnabled={collapseEnabled}
+              previewStyle={previewStyle}
+              isLink={isLink}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              previewRef={previewRef}
+            />
+          )}
+        </li>
+      </ContextMenuTrigger>
+      {contextMenu}
+    </ContextMenu>
   );
 }
 
-/** Note content: collapsible preview/full/edit branches and the meta row. */
+/** Note content: collapsible preview/full branches. */
 function ItemBody({
   item,
+  done,
   canCollapse,
   collapseEnabled,
   previewStyle,
   isLink,
-  editing,
-  editField,
   expanded,
   setExpanded,
   previewRef,
-  hoverActions,
 }: {
   item: Item;
+  done: boolean;
   canCollapse: boolean;
   collapseEnabled: boolean;
   previewStyle: { WebkitLineClamp: number } | undefined;
   isLink: boolean;
-  editing: boolean;
-  editField: React.ReactNode;
   expanded: boolean;
   setExpanded: (value: boolean | ((current: boolean) => boolean)) => void;
   previewRef: React.RefObject<HTMLParagraphElement | null>;
-  hoverActions: React.ReactNode;
 }) {
-  // Editing (local or store-requested) always shows the full note.
-  const open = expanded || editing;
+  const open = expanded;
 
   return (
     <div className="min-w-0 flex-1">
       {canCollapse ? (
         <CollapsibleItemBody
           item={item}
+          done={done}
           open={open}
-          editing={editing}
-          editField={editField}
           setExpanded={setExpanded}
           previewStyle={previewStyle}
           isLink={isLink}
           previewRef={previewRef}
-          hoverActions={hoverActions}
         />
-      ) : editing ? (
-        editField
       ) : (
         <p
           ref={previewRef}
           dir="auto"
           style={previewStyle}
           className={cn(
-            "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
+            "whitespace-pre-wrap text-sm font-normal leading-5 text-foreground [overflow-wrap:anywhere]",
             collapseEnabled && "overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical]",
-            isLink && "text-primary underline-offset-2 hover:underline"
+            done && "text-muted-foreground line-through",
+            isLink && !done && "text-primary underline-offset-2 hover:underline"
           )}
         >
           {item.content}
         </p>
       )}
-      {!canCollapse ? (
-        <div className="mt-2 flex min-h-6 items-center justify-between gap-2">
-          <p className="text-[11px] text-muted-foreground/70">
-            {formatRelative(item.createdAt)}
-          </p>
-          {hoverActions}
-        </div>
-      ) : null}
     </div>
   );
 }
 
-/** The collapsible preview/full/edit layout for rows over the line limit. */
+/** The collapsible preview/full layout for rows over the line limit. */
 function CollapsibleItemBody({
   item,
+  done,
   open,
-  editing,
-  editField,
   setExpanded,
   previewStyle,
   isLink,
   previewRef,
-  hoverActions,
 }: {
   item: Item;
+  done: boolean;
   open: boolean;
-  editing: boolean;
-  editField: React.ReactNode;
   setExpanded: (value: boolean | ((current: boolean) => boolean)) => void;
   previewStyle: { WebkitLineClamp: number } | undefined;
   isLink: boolean;
   previewRef: React.RefObject<HTMLParagraphElement | null>;
-  hoverActions: React.ReactNode;
 }) {
   return (
     <Collapsible open={open} onOpenChange={setExpanded}>
@@ -344,9 +471,10 @@ function CollapsibleItemBody({
           aria-hidden={open}
           style={previewStyle}
           className={cn(
-            "col-start-1 row-start-1 self-start overflow-hidden whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [overflow-wrap:anywhere] transition-opacity duration-150",
+            "col-start-1 row-start-1 self-start overflow-hidden whitespace-pre-wrap text-sm font-normal leading-5 text-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [overflow-wrap:anywhere] transition-opacity duration-150",
             open && "pointer-events-none opacity-0",
-            isLink && "text-primary underline-offset-2 hover:underline"
+            done && "text-muted-foreground line-through",
+            isLink && !done && "text-primary underline-offset-2 hover:underline"
           )}
         >
           {item.content}
@@ -356,77 +484,40 @@ function CollapsibleItemBody({
           aria-hidden={!open}
           className="col-start-1 row-start-1 min-h-0 min-w-0 self-start overflow-hidden data-[state=closed]:pointer-events-none data-[state=closed]:animate-[pocket-collapsible-up_180ms_ease-in] data-[state=open]:animate-[pocket-collapsible-down_220ms_ease-out] motion-reduce:animate-none"
         >
-          {editing ? (
-            editField
-          ) : (
-            <p
-              dir="auto"
-              className={cn(
-                "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
-                isLink && "text-primary underline-offset-2 hover:underline"
-              )}
-            >
-              {item.content}
-            </p>
-          )}
+          <p
+            dir="auto"
+            className={cn(
+              "whitespace-pre-wrap text-sm font-normal leading-5 text-foreground [overflow-wrap:anywhere]",
+              done && "text-muted-foreground line-through",
+              isLink && !done && "text-primary underline-offset-2 hover:underline"
+            )}
+          >
+            {item.content}
+          </p>
         </CollapsibleContent>
       </div>
 
-      <div className="mt-2 flex min-h-6 items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <p className="text-[11px] text-muted-foreground/70">
-            {formatRelative(item.createdAt)}
-          </p>
-          {!editing ? (
-            <CollapsibleTrigger asChild>
-              <Button
-                type="button"
-                size="xs"
-                variant="ghost"
-                className="h-5 px-1.5 text-[11px] text-muted-foreground"
-              >
-                {open ? (
-                  <ChevronUp data-icon="inline-start" />
-                ) : (
-                  <ChevronDown data-icon="inline-start" />
+      {
+        <div className="mt-2 flex min-h-6 items-center justify-end gap-1.5">
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              className="h-5 px-1.5 text-[11px] text-muted-foreground"
+            >
+              <ChevronDown
+                data-icon="inline-start"
+                className={cn(
+                  "transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                  open && "-scale-y-100"
                 )}
-                {open ? "Show less" : "Show more"}
-              </Button>
-            </CollapsibleTrigger>
-          ) : null}
+              />
+              {open ? "Show less" : "Show more"}
+            </Button>
+          </CollapsibleTrigger>
         </div>
-        {hoverActions}
-      </div>
+      }
     </Collapsible>
-  );
-}
-
-function RowButton({
-  label,
-  icon,
-  onClick,
-  destructive,
-  disabled,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-  destructive?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <Button
-      size="icon-sm"
-      variant="ghost"
-      aria-label={label}
-      disabled={disabled}
-      className={cn(
-        "text-muted-foreground hover:text-foreground",
-        destructive && "hover:text-destructive"
-      )}
-      onClick={onClick}
-    >
-      {icon}
-    </Button>
   );
 }

@@ -47,6 +47,7 @@ export const api = {
   ) => invoke<Item>("update_item", { workspaceId, itemId, patch }),
   deleteItem: (workspaceId: string, itemId: string) =>
     invoke<void>("delete_item", { workspaceId, itemId }),
+
   setPinned: (
     workspaceId: string,
     kind: "text" | "voice",

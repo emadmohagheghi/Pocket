@@ -84,7 +84,7 @@ export function SearchBar({ inputRef }: SearchBarProps) {
     <div className="relative min-w-0 flex-1">
       <label
         htmlFor={inputId}
-        className="flex h-10 items-center gap-2.5 rounded-xl bg-muted/60 px-3.5 transition-colors focus-within:bg-muted"
+        className="flex h-10 items-center gap-2.5 rounded-[24px] border border-border/60 bg-card px-3.5 transition-colors focus-within:border-blue-500/50"
       >
         <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         <div className="relative min-w-0 flex-1">
@@ -94,7 +94,7 @@ export function SearchBar({ inputRef }: SearchBarProps) {
             type="search"
             value={query}
             autoComplete="off"
-            placeholder="Search text and voice…"
+            placeholder="Search"
             aria-label="Search text and voice"
             role="combobox"
             aria-autocomplete="list"
@@ -113,7 +113,7 @@ export function SearchBar({ inputRef }: SearchBarProps) {
           id={resultsId}
           role="listbox"
           aria-label="Search results"
-          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-xl border border-border/60 bg-popover p-2 shadow-lg"
+          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-xl border border-border/60 bg-card p-2 shadow-lg"
         >
           {searching ? (
             <p className="px-4 py-6 text-center text-xs text-muted-foreground">Searching…</p>

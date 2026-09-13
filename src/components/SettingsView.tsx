@@ -263,7 +263,7 @@ function Section({
         <span className="text-muted-foreground">{icon}</span>
         <h2 className="text-sm font-semibold">{title}</h2>
       </div>
-      <div className="space-y-1">{children}</div>
+      <div className="space-y-2">{children}</div>
     </section>
   );
 }
@@ -278,7 +278,7 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg px-1 py-2.5">
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-border/60 bg-card px-3 py-2.5">
       <div className="min-w-0">
         <Label className="text-[13px]">{label}</Label>
         {description ? (
@@ -295,15 +295,14 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        data-tauri-drag-region="deep"
         closeButtonClassName="right-4 top-4"
-        className="inset-3 flex h-auto w-auto max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-3xl bg-background p-0 sm:max-w-none"
+        className="inset-3 flex h-auto w-auto max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-[36px] bg-background p-0 sm:max-w-none"
       >
         <div data-tauri-drag-region className="h-5 w-full shrink-0" aria-hidden />
         <DialogHeader className="shrink-0 border-b px-5 pb-4">
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
+        <div className="scroll-fade min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
           <SettingsView />
         </div>
       </DialogContent>

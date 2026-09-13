@@ -197,6 +197,20 @@ export function playPocketSound(sound: PocketSound): void {
     });
 }
 
+/** Pre-arm the shared AudioContext (WebView2 suspends it until a gesture).
+      Called on window focus/input so hotkey-triggered cues — like the
+      record-start tap from a Shift+Shift hold in another app — can play. */
+export async function unlockPocketAudio(): Promise<void> {
+  if (!patch) return;
+  try {
+    const ctx = await ensureReady();
+    setMasterVolume(volume());
+    if (ctx.state !== "running") void ctx.resume().catch(() => {});
+  } catch {
+    // Audio stays unavailable; sounds are decorative.
+  }
+}
+
 export function arePocketSoundsEnabled(): boolean {
   return isEnabled();
 }
