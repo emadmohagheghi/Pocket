@@ -17,7 +17,7 @@ import { DeleteWorkspaceDialog } from "@/components/DeleteWorkspaceDialog";
 export function WorkspacesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent data-tauri-drag-region="deep" className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>Workspaces</DialogTitle>
         </DialogHeader>

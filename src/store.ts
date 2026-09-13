@@ -43,6 +43,9 @@ interface PocketStore {
   playerTime: number;
   playerDuration: number;
   playerSeekRequest: number | null;
+  /** True while the user is actively dragging a waveform (progress reports
+      from the audio element are suppressed so the scrub stays in charge). */
+  playerScrubbing: boolean;
 
   playRecording: (rec: Recording) => void;
   togglePlayer: () => void;
@@ -50,6 +53,7 @@ interface PocketStore {
   requestPlayerSeek: (seconds: number) => void;
   skipPlayer: (deltaSeconds: number) => void;
   reportPlayerProgress: (time: number, duration: number, playing: boolean) => void;
+  setPlayerScrubbing: (scrubbing: boolean) => void;
 
   init: () => Promise<void>;
   setFocusItem: (id: string | null) => void;
@@ -89,6 +93,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
   playerTime: 0,
   playerDuration: 0,
   playerSeekRequest: null,
+  playerScrubbing: false,
 
   init: () => {
     if (initPromise) return initPromise;
@@ -301,7 +306,9 @@ export const usePocket = create<PocketStore>((set, get) => ({
 
   requestPlayerSeek: (seconds) => {
     if (!get().player) return;
-    set({ playerSeekRequest: Math.max(0, seconds) });
+    // Optimistic: the row's waveform follows the drag immediately; the
+    // audio element converges when it applies the request.
+    set({ playerSeekRequest: Math.max(0, seconds), playerTime: Math.max(0, seconds) });
   },
 
   skipPlayer: (deltaSeconds) => {
@@ -309,6 +316,12 @@ export const usePocket = create<PocketStore>((set, get) => ({
     set({ playerSeekRequest: Math.max(0, get().playerTime + deltaSeconds) });
   },
 
-  reportPlayerProgress: (time, duration, playing) =>
-    set({ playerTime: time, playerDuration: duration, playerPlaying: playing }),
+  setPlayerScrubbing: (scrubbing: boolean) => set({ playerScrubbing: scrubbing }),
+
+  reportPlayerProgress: (time, duration, playing) => {
+    // During a waveform drag the optimistic scrub position is the truth;
+    // reports from the audio element (still at the pre-seek position) lose.
+    if (get().playerScrubbing) return;
+    set({ playerTime: time, playerDuration: duration, playerPlaying: playing });
+  },
 }));

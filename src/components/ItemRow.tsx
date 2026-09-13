@@ -72,13 +72,28 @@ export function ItemRow({ item, focused }: Props) {
   }, [focused]);
 
   useEffect(() => {
-    if (editing) {
-      setDraft(item.content);
-      requestAnimationFrame(() => {
-        editRef.current?.focus();
-        editRef.current?.setSelectionRange(item.content.length, item.content.length);
-      });
-    }
+    if (!editing) return;
+    setDraft(item.content);
+    // Radix restores focus to the card after the context menu closes —
+    // after our first frame. Keep claiming focus until the field has it,
+    // caret at the end, or entering edit from the menu appears dead.
+    const focus = () => {
+      if (document.activeElement === editRef.current) return true;
+      editRef.current?.focus();
+      editRef.current?.setSelectionRange(item.content.length, item.content.length);
+      return document.activeElement === editRef.current;
+    };
+    let raf = 0;
+    const tries = [0, 50, 150].map((delay) =>
+      window.setTimeout(() => {
+        if (focus()) return;
+        if (delay === 0) raf = requestAnimationFrame(() => void focus());
+      }, delay)
+    );
+    return () => {
+      tries.forEach(clearTimeout);
+      cancelAnimationFrame(raf);
+    };
   }, [editing, item.content]);
 
   useLayoutEffect(() => {
@@ -137,6 +152,11 @@ export function ItemRow({ item, focused }: Props) {
     }
   };
 
+  const editStartedAt = useRef(0);
+  useEffect(() => {
+    if (editing) editStartedAt.current = Date.now();
+  }, [editing]);
+
   const endEditing = () => {
     setLocalEditing(false);
     clearEditRequest();
@@ -175,11 +195,13 @@ export function ItemRow({ item, focused }: Props) {
     <Textarea
       ref={editRef}
       dir="auto"
+      autoFocus
       value={draft}
       rows={1}
-      className="min-h-0 resize-none overflow-hidden border-none bg-transparent p-0 text-sm leading-snug shadow-none [overflow-wrap:anywhere] focus-visible:ring-0"
+      className="field-sizing-content max-h-64 w-full resize-none border-none bg-transparent p-0 text-sm leading-snug shadow-none outline-none [overflow-wrap:anywhere]"
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={(e) => {
+        // Enter commits, Shift+Enter is a newline, Escape cancels.
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
           void saveEdit();
@@ -187,9 +209,15 @@ export function ItemRow({ item, focused }: Props) {
           endEditing();
         }
       }}
-      onBlur={() => void saveEdit()}
+      // Guarded blur-save: the context menu's close shuffles focus through
+      // the card right after Edit is chosen, which must not close the
+      // editor (and looks like Edit doing nothing).
+      onBlur={() => {
+        if (Date.now() - editStartedAt.current > 250) void saveEdit();
+      }}
     />
   );
+
 
   const deleteEntry = () => {
     playPocketSound("destructive");
@@ -222,23 +250,24 @@ export function ItemRow({ item, focused }: Props) {
         <li
           ref={rowRef}
           tabIndex={0}
-          data-tauri-drag-region="deep"
           data-item-id={item.id}
           onKeyDown={onKeyDownRow}
-          className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-colors hover:border-border"
+          className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-colors hover:border-border data-[state=open]:border-blue-500"
         >
-          <ItemBody
-            item={item}
-            canCollapse={canCollapse}
-            collapseEnabled={collapseEnabled}
-            previewStyle={previewStyle}
-            isLink={isLink}
-            editing={editing}
-            editField={editField}
-            expanded={expanded}
-            setExpanded={setExpanded}
-            previewRef={previewRef}
-          />
+          {editing ? (
+            editField
+          ) : (
+            <ItemBody
+              item={item}
+              canCollapse={canCollapse}
+              collapseEnabled={collapseEnabled}
+              previewStyle={previewStyle}
+              isLink={isLink}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              previewRef={previewRef}
+            />
+          )}
         </li>
       </ContextMenuTrigger>
       {contextMenu}
@@ -253,8 +282,6 @@ function ItemBody({
   collapseEnabled,
   previewStyle,
   isLink,
-  editing,
-  editField,
   expanded,
   setExpanded,
   previewRef,
@@ -264,14 +291,11 @@ function ItemBody({
   collapseEnabled: boolean;
   previewStyle: { WebkitLineClamp: number } | undefined;
   isLink: boolean;
-  editing: boolean;
-  editField: React.ReactNode;
   expanded: boolean;
   setExpanded: (value: boolean | ((current: boolean) => boolean)) => void;
   previewRef: React.RefObject<HTMLParagraphElement | null>;
 }) {
-  // Editing (local or store-requested) always shows the full note.
-  const open = expanded || editing;
+  const open = expanded;
 
   return (
     <div className="min-w-0 flex-1">
@@ -279,15 +303,11 @@ function ItemBody({
         <CollapsibleItemBody
           item={item}
           open={open}
-          editing={editing}
-          editField={editField}
           setExpanded={setExpanded}
           previewStyle={previewStyle}
           isLink={isLink}
           previewRef={previewRef}
         />
-      ) : editing ? (
-        editField
       ) : (
         <p
           ref={previewRef}
@@ -310,8 +330,6 @@ function ItemBody({
 function CollapsibleItemBody({
   item,
   open,
-  editing,
-  editField,
   setExpanded,
   previewStyle,
   isLink,
@@ -319,8 +337,6 @@ function CollapsibleItemBody({
 }: {
   item: Item;
   open: boolean;
-  editing: boolean;
-  editField: React.ReactNode;
   setExpanded: (value: boolean | ((current: boolean) => boolean)) => void;
   previewStyle: { WebkitLineClamp: number } | undefined;
   isLink: boolean;
@@ -347,23 +363,19 @@ function CollapsibleItemBody({
           aria-hidden={!open}
           className="col-start-1 row-start-1 min-h-0 min-w-0 self-start overflow-hidden data-[state=closed]:pointer-events-none data-[state=closed]:animate-[pocket-collapsible-up_180ms_ease-in] data-[state=open]:animate-[pocket-collapsible-down_220ms_ease-out] motion-reduce:animate-none"
         >
-          {editing ? (
-            editField
-          ) : (
-            <p
-              dir="auto"
-              className={cn(
-                "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
-                isLink && "text-primary underline-offset-2 hover:underline"
-              )}
-            >
-              {item.content}
-            </p>
-          )}
+          <p
+            dir="auto"
+            className={cn(
+              "whitespace-pre-wrap text-sm font-normal leading-snug text-foreground [overflow-wrap:anywhere]",
+              isLink && "text-primary underline-offset-2 hover:underline"
+            )}
+          >
+            {item.content}
+          </p>
         </CollapsibleContent>
       </div>
 
-      {!editing ? (
+      {
         <div className="mt-2 flex min-h-6 items-center justify-end gap-1.5">
           <CollapsibleTrigger asChild>
             <Button
@@ -381,7 +393,7 @@ function CollapsibleItemBody({
             </Button>
           </CollapsibleTrigger>
         </div>
-      ) : null}
+      }
     </Collapsible>
   );
 }

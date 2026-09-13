@@ -9,7 +9,7 @@ import {
 
 import { usePocket } from "@/store";
 import { AddBar, ItemList } from "@/components/ItemList";
-import { PlayerBar } from "@/components/VoiceList";
+import { VoicePlayerEngine } from "@/components/VoiceList";
 import { SettingsDialog } from "@/components/SettingsView";
 import { WorkspacesDialog } from "@/components/WorkspaceSwitcher";
 import { SearchBar } from "@/components/SearchBar";
@@ -72,16 +72,12 @@ export default function MainWindow() {
 
   return (
     <div className="relative h-screen bg-transparent p-3">
-      <div
-        data-tauri-drag-region="deep"
-        className="flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-background"
-      >
-        {/* Dedicated full-width drag strip: the search/menu row below is
-            almost entirely interactive, so without this there would be no
-            usable empty area to grab the frameless window by. */}
+      <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-background">
+        {/* Dedicated drag strips: the window is only draggable from these
+            empty areas, never from content. */}
         <div data-tauri-drag-region className="h-5 w-full shrink-0" aria-hidden />
         {/* Top bar: search + overflow menu. */}
-        <div className="flex items-center gap-2 px-3 pb-0">
+        <div className="flex items-center gap-2 px-4 pb-0">
           <SearchBar inputRef={searchInputRef} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -153,10 +149,11 @@ export default function MainWindow() {
           <ItemList />
         </div>
 
-        {/* Voice player (only while something plays) + capture bar. */}
-        <PlayerBar />
-        <div className="shrink-0 border-t border-border/60 px-4 pb-4 pt-3">
+        {/* Invisible audio engine; playback UI lives in the voice rows. */}
+        <VoicePlayerEngine />
+        <div className="shrink-0 px-4 pb-4 pt-3">
           <AddBar />
+          <div data-tauri-drag-region className="h-2 w-full" aria-hidden />
         </div>
       </div>
 

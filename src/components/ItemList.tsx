@@ -62,7 +62,7 @@ export function ItemList() {
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller>
           <MessageScrollerViewport>
-            <MessageScrollerContent className="px-1 py-2">
+            <MessageScrollerContent className="px-4 py-2">
               {entries.map((entry) => (
                 <MessageScrollerItem key={entry.key} messageId={entry.key}>
                   {entry.kind === "text" ? (
