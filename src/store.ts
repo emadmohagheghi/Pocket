@@ -34,7 +34,6 @@ interface PocketStore {
   data: WorkspaceData | null;
   /** Item to scroll to + highlight (from search). */
   focusItemId: string | null;
-  selectedEntry: { id: string; kind: EntryKind } | null;
   editRequest: { id: string; kind: EntryKind; nonce: number } | null;
   gaming: boolean;
 
@@ -54,7 +53,6 @@ interface PocketStore {
 
   init: () => Promise<void>;
   setFocusItem: (id: string | null) => void;
-  selectEntry: (entry: { id: string; kind: EntryKind } | null) => void;
   requestEdit: (id: string, kind: EntryKind) => void;
   clearEditRequest: () => void;
   refreshItems: () => Promise<void>;
@@ -88,7 +86,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
   workspaces: [],
   data: null,
   focusItemId: null,
-  selectedEntry: null,
   editRequest: null,
   gaming: false,
   player: null,
@@ -145,7 +142,6 @@ export const usePocket = create<PocketStore>((set, get) => ({
   },
 
   setFocusItem: (focusItemId) => set({ focusItemId }),
-  selectEntry: (selectedEntry) => set({ selectedEntry }),
   requestEdit: (id, kind) =>
     set({ editRequest: { id, kind, nonce: Date.now() } }),
   clearEditRequest: () => set({ editRequest: null }),

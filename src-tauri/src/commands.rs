@@ -604,16 +604,6 @@ pub fn update_settings(app: AppHandle, patch: SettingsPatch) -> AppResult<Settin
                 ));
             }
         }
-        if let Some(v) = patch.pin_control_style {
-            if matches!(
-                v.as_str(),
-                "hover-toolbar" | "metadata" | "leading" | "bottom-bar" | "drag"
-            ) {
-                s.pin_control_style = v;
-            } else {
-                return Err(AppError::Invalid("invalid pin control style".into()));
-            }
-        }
         let settings = s.clone();
         guard.persist_settings();
         (settings, patch.launch_on_startup.is_some())

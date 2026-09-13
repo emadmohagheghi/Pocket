@@ -3,7 +3,7 @@ import { AudioLines, Check, Pause, Pencil, Play, RotateCcw, RotateCw, Square, Tr
 
 import { usePocket } from "@/store";
 import { api, voiceUrl } from "@/lib/api";
-import { cn, formatBytes, formatDuration, formatRelative } from "@/lib/utils";
+import { formatBytes, formatDuration, formatRelative } from "@/lib/utils";
 import { playPocketSound } from "@/lib/sound";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,15 +59,9 @@ export function VoiceList() {
 export function VoiceRow({
   recording,
   focused,
-  onEntryPointerDown,
 }: {
   recording: Recording;
   focused?: boolean;
-  onEntryPointerDown?: (
-    event: React.PointerEvent,
-    id: string,
-    pinned: boolean
-  ) => void;
 }) {
   const {
     deleteRecording,
@@ -78,17 +72,12 @@ export function VoiceRow({
     togglePlayer,
     stopPlayer,
     setEntryPinned,
-    settings,
-    selectedEntry,
-    selectEntry,
     editRequest,
     clearEditRequest,
   } = usePocket();
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(recording.name);
   const rowRef = useRef<HTMLDivElement>(null);
-  const pinStyle = settings?.pinControlStyle ?? "hover-toolbar";
-  const selected = selectedEntry?.kind === "voice" && selectedEntry.id === recording.id;
 
   useEffect(() => setName(recording.name), [recording.name]);
 
@@ -126,32 +115,43 @@ export function VoiceRow({
 
   const togglePin = () =>
     void setEntryPinned("voice", recording.id, !recording.pinned);
+  const hoverActions = (
+    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+      <PinButton pinned={recording.pinned} onToggle={togglePin} />
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className="text-muted-foreground hover:text-foreground"
+        aria-label="Rename"
+        onClick={() => setRenaming(true)}
+      >
+        <Pencil />
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className="text-muted-foreground hover:text-destructive"
+        aria-label="Delete recording"
+        onClick={() => {
+          if (isCurrent) stopPlayer();
+          playPocketSound("destructive");
+          void deleteRecording(recording.id);
+        }}
+      >
+        <Trash2 />
+      </Button>
+    </div>
+  );
 
   return (
     <div
       ref={rowRef}
       role="listitem"
       tabIndex={0}
-      data-tauri-drag-region={pinStyle === "drag" ? undefined : "deep"}
-      onPointerDown={(event) =>
-        pinStyle === "drag" &&
-        onEntryPointerDown?.(event, recording.id, recording.pinned)
-      }
-      onClick={(event) => {
-        if (
-          pinStyle === "bottom-bar" &&
-          !(event.target as HTMLElement).closest("button, textarea, input, a")
-        ) {
-          selectEntry(selected ? null : { id: recording.id, kind: "voice" });
-        }
-      }}
-      className={cn(
-        "group flex items-center gap-3 px-1 py-3",
-        selected && "rounded-lg bg-muted/60",
-        pinStyle === "drag" && "cursor-grab select-none active:cursor-grabbing"
-      )}
+      data-tauri-drag-region="deep"
+      className="group flex items-start gap-3 px-1 py-3"
     >
-      <div className="relative size-8 shrink-0">
+      <div className="relative mt-0.5 size-8 shrink-0">
         <Button
           size="icon"
           variant="secondary"
@@ -161,17 +161,6 @@ export function VoiceRow({
         >
           {playing ? <Pause /> : <Play />}
         </Button>
-        {pinStyle === "leading" ? (
-          <PinButton
-            pinned={recording.pinned}
-            onToggle={togglePin}
-            className={cn(
-              "absolute -right-2 -top-2 size-5 rounded-full bg-background shadow-sm [&_svg]:size-2.5",
-              !recording.pinned &&
-                "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-            )}
-          />
-        ) : null}
       </div>
 
       <div className="min-w-0 flex-1">
@@ -201,72 +190,13 @@ export function VoiceRow({
         ) : (
           <p className="truncate text-sm font-normal">{recording.name}</p>
         )}
-        <div className="flex items-center gap-1.5">
-          <p className="text-[11px] text-muted-foreground/70">
+        <div className="mt-1 flex min-h-6 items-center justify-between gap-2">
+          <p className="min-w-0 text-[11px] text-muted-foreground/70">
             {formatDuration(recording.durationMs)} · {formatBytes(recording.sizeBytes)} ·{" "}
             {formatRelative(recording.createdAt)}
           </p>
-          {pinStyle === "metadata" ? (
-            <PinButton pinned={recording.pinned} onToggle={togglePin} />
-          ) : null}
+          {hoverActions}
         </div>
-        {pinStyle === "hover-toolbar" ? (
-          <div className="mt-1 flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-            <PinButton pinned={recording.pinned} onToggle={togglePin} />
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Rename"
-              onClick={() => setRenaming(true)}
-            >
-              <Pencil />
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="text-muted-foreground hover:text-destructive"
-              aria-label="Delete recording"
-              onClick={() => {
-                if (isCurrent) stopPlayer();
-                playPocketSound("destructive");
-                void deleteRecording(recording.id);
-              }}
-            >
-              <Trash2 />
-            </Button>
-          </div>
-        ) : null}
-      </div>
-
-      <div
-        className={cn(
-          "flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
-          pinStyle === "hover-toolbar" && "hidden"
-        )}
-      >
-        <Button
-          size="icon"
-          variant="ghost"
-          className={cn("size-7 text-muted-foreground hover:text-foreground")}
-          aria-label="Rename"
-          onClick={() => setRenaming(true)}
-        >
-          <Pencil />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-7 text-muted-foreground hover:text-destructive"
-          aria-label="Delete recording"
-          onClick={() => {
-            if (isCurrent) stopPlayer();
-            playPocketSound("destructive");
-            void deleteRecording(recording.id);
-          }}
-        >
-          <Trash2 />
-        </Button>
       </div>
     </div>
   );

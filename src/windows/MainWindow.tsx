@@ -13,7 +13,6 @@ import { PlayerBar } from "@/components/VoiceList";
 import { SettingsDialog } from "@/components/SettingsView";
 import { WorkspacesDialog } from "@/components/WorkspaceSwitcher";
 import { SearchBar } from "@/components/SearchBar";
-import { SelectionBar } from "@/components/SelectionBar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -28,7 +27,7 @@ import { applyTheme } from "@/lib/theme";
 import { playPocketSound } from "@/lib/sound";
 
 export default function MainWindow() {
-  const { init, settings, gaming, selectedEntry, selectEntry } = usePocket();
+  const { init, settings, gaming } = usePocket();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -42,12 +41,6 @@ export default function MainWindow() {
   useEffect(() => {
     if (settings) applyTheme(settings.theme);
   }, [settings?.theme]);
-
-  useEffect(() => {
-    if (settings?.pinControlStyle !== "bottom-bar" && selectedEntry) {
-      selectEntry(null);
-    }
-  }, [selectEntry, selectedEntry, settings?.pinControlStyle]);
 
   // Frameless transparent window: the card below provides the background.
   useEffect(() => {
@@ -156,14 +149,10 @@ export default function MainWindow() {
           <ItemList />
         </div>
 
-        {/* Voice player (only while something plays) + pinned capture bar. */}
+        {/* Voice player (only while something plays) + capture bar. */}
         <PlayerBar />
         <div className="shrink-0 border-t border-border/60 px-4 pb-4 pt-3">
-          {settings?.pinControlStyle === "bottom-bar" && selectedEntry ? (
-            <SelectionBar />
-          ) : (
-            <AddBar />
-          )}
+          <AddBar />
         </div>
       </div>
 

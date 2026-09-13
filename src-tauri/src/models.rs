@@ -77,7 +77,6 @@ pub struct Settings {
     pub gaming_detection_enabled: bool,
     pub theme: String,
     pub note_preview_lines: u8,
-    pub pin_control_style: String,
 }
 
 impl Default for Settings {
@@ -89,7 +88,6 @@ impl Default for Settings {
             gaming_detection_enabled: false,
             theme: "system".into(),
             note_preview_lines: 5,
-            pin_control_style: "hover-toolbar".into(),
         }
     }
 }
@@ -102,7 +100,6 @@ pub struct SettingsPatch {
     pub gaming_detection_enabled: Option<bool>,
     pub theme: Option<String>,
     pub note_preview_lines: Option<u8>,
-    pub pin_control_style: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -191,7 +188,6 @@ mod tests {
     fn old_settings_files_gain_the_note_preview_default() {
         let settings: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
         assert_eq!(settings.note_preview_lines, 5);
-        assert_eq!(settings.pin_control_style, "hover-toolbar");
     }
 
     #[test]
