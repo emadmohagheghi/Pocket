@@ -28,7 +28,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
-import { listen } from "@tauri-apps/api/event";
 import { Toaster, toast } from "@/components/ui/toast";
 import { applyTheme } from "@/lib/theme";
 
@@ -131,22 +130,6 @@ export default function MainWindow() {
     })();
     return () => {
       cancelled = true;
-    };
-  }, []);
-
-  // Double-shift hold (native hook) drives the in-app recorder: bridge the
-  // backend events onto window events the AddBar listens for.
-  useEffect(() => {
-    const unlisten = [
-      listen("voice-hold-start", () =>
-        window.dispatchEvent(new Event("pocket-voice-hold-start"))
-      ),
-      listen("voice-hold-release", () =>
-        window.dispatchEvent(new Event("pocket-voice-hold-stop"))
-      ),
-    ];
-    return () => {
-      void Promise.all(unlisten).then((uns) => uns.forEach((u) => u()));
     };
   }, []);
 

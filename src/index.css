@@ -268,3 +268,11 @@ textarea {
 }
 
 
+
+/* Focus indicators are removed app-wide: Space/Enter (and clicks) must not
+   paint outlines, rings or box-shadows on any element. */
+*:focus,
+*:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}

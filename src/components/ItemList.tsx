@@ -466,30 +466,6 @@ export function AddBar() {
     }
   };
 
-  // Native double-shift hold lands here: start on press, save on release.
-  // Refs keep the listeners stable while the recorder state churns.
-  const recorderSnapshotRef = useRef(recorder);
-  recorderSnapshotRef.current = recorder;
-  const stopAndSaveRef = useRef<() => Promise<void>>(async () => {});
-  useEffect(() => {
-    const onStart = () => {
-      const r = recorderSnapshotRef.current;
-      if (!r.recording && !r.paused && !r.isBusy()) {
-        void r.start();
-      }
-    };
-    const onStop = () => {
-      const r = recorderSnapshotRef.current;
-      if (r.recording) void stopAndSaveRef.current();
-    };
-    window.addEventListener("pocket-voice-hold-start", onStart);
-    window.addEventListener("pocket-voice-hold-stop", onStop);
-    return () => {
-      window.removeEventListener("pocket-voice-hold-start", onStart);
-      window.removeEventListener("pocket-voice-hold-stop", onStop);
-    };
-  }, []);
-
   const stopAndSaveVoice = async () => {
     // Optimistic flag keeps the bar in voice mode across the stop() gap.
     setSavingVoice(true);
@@ -518,7 +494,6 @@ export function AddBar() {
       setSavingVoice(false);
     }
   };
-  stopAndSaveRef.current = stopAndSaveVoice;
 
   return (
     // Clicks in the capture bar focus the textarea instead of dragging the
