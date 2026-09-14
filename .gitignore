@@ -7,3 +7,6 @@
 
 # Local marketing assets (Telegram post, renders)
 /promo
+
+# Freebuff local state
+/.freebuff

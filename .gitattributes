@@ -1,0 +1,17 @@
+# Normalize line endings: LF in the repo and in working copies,
+# so core.autocrlf settings can't cause phantom diffs.
+* text=auto eol=lf
+
+# Windows scripts should keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets (never touched)
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
