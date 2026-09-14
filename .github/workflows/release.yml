@@ -2,7 +2,8 @@ name: Release
 
 # Builds release attachments for Windows and Linux. Create and publish a
 # GitHub release (or run this workflow manually) and the platform bundles
-# are built and attached to that release.
+# are built and attached to that release. The release's title and
+# description are never modified; only assets are uploaded.
 on:
   release:
     types:
@@ -68,23 +69,37 @@ jobs:
             throw "Tag ${{ github.ref_name }} does not match app version v$tauriVersion"
           }
 
-      - name: Build and publish release assets
-        uses: tauri-apps/tauri-action@v1
+      - name: Build release bundles
+        run: pnpm tauri build --bundles ${{ matrix.bundles }}
+
+      - name: Collect bundle artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          found=false
+          for f in \
+            src-tauri/target/release/bundle/nsis/*.exe \
+            src-tauri/target/release/bundle/deb/*.deb \
+            src-tauri/target/release/bundle/appimage/*.AppImage; do
+            if [ -e "$f" ]; then
+              cp "$f" dist/
+              found=true
+            fi
+          done
+          if [ "$found" != "true" ]; then
+            echo "No bundles found" >&2
+            exit 1
+          fi
+          ls -l dist
+
+      - name: Upload assets to release
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: v__VERSION__
-          releaseName: "Pocket v__VERSION__"
-          releaseBody: |
-            Pocket v__VERSION__ installers.
-
-            Windows: download the attached `setup.exe` and run it to install Pocket for the current user.
-
-            Linux: download the attached `.deb` (Debian/Ubuntu) or `.AppImage` (portable) bundle.
-
-            This build is currently unsigned. Windows SmartScreen may show a warning.
-            Code-signing policy: https://github.com/emadmohagheghi/Pocket/blob/master/CODE_SIGNING_POLICY.md
-            Privacy policy: https://github.com/emadmohagheghi/Pocket/blob/master/PRIVACY.md
-          releaseDraft: false
-          prerelease: false
-          args: --bundles ${{ matrix.bundles }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          if [ -z "$TAG" ]; then
+            TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')"
+          fi
+          echo "Uploading to release $TAG"
+          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
