@@ -9,7 +9,6 @@ import { useQc, useQcEvents } from "@/qcStore";
 import { useRecorder } from "@/hooks/useRecorder";
 import { NebulaOrb } from "@/components/NebulaOrb";
 import { cn, formatDuration } from "@/lib/utils";
-import { playPocketSound } from "@/lib/sound";
 
 export default function QuickCaptureWindow() {
   const { settings, workspaces } = useQc();
@@ -94,21 +93,9 @@ export default function QuickCaptureWindow() {
       heldVoiceReleasedRef.current = false;
       leftVoiceStopRequestedRef.current = false;
       automaticVoiceSaveStartedRef.current = false;
-      playPocketSound("open");
       void recorder.start();
     })();
   });
-
-  // A successful direct text capture never opens this window; Rust asks its
-  // already-loaded webview to play the same local confirmation cue.
-  useEffect(() => {
-    const unlistenPromise = listen<string>("play-sfx", (event) => {
-      playPocketSound(event.payload === "text" ? "success" : "open");
-    });
-    return () => {
-      void unlistenPromise.then((unlisten) => unlisten());
-    };
-  }, []);
 
   // Losing focus does not cancel an active recording. An idle panel can close
   // itself normally when the user moves elsewhere.
@@ -168,11 +155,9 @@ export default function QuickCaptureWindow() {
         buffer
       );
       await api.log(`voice stopAndSave: saved id=${saved.id} file=${saved.file}`);
-      playPocketSound("success");
       flashThenHide();
     } catch (error) {
       void api.log(`voice stopAndSave FAILED: ${error}`);
-      playPocketSound("error");
     }
   };
 
@@ -248,12 +233,10 @@ export default function QuickCaptureWindow() {
           savedFlash={savedFlash}
           recording={recorder.recording}
           onStart={() => {
-            playPocketSound("open");
             void recorder.start();
           }}
           onStopSave={() => void stopAndSave()}
           onCancel={() => {
-            playPocketSound("close");
             void hideWindow();
           }}
         />

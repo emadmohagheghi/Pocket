@@ -40,10 +40,25 @@
         "transparent": true,
         "shadow": false,
         "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+      },
+      {
+        "label": "hud",
+        "title": "Pocket HUD",
+        "width": 220,
+        "height": 72,
+        "visible": false,
+        "skipTaskbar": true,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "resizable": false,
+        "transparent": true,
+        "shadow": false,
+        "focus": false,
+        "focusable": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost; img-src 'self' data:; media-src 'self' data: http://voice.localhost https://voice.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https://api.github.com; img-src 'self' data:; media-src 'self' data: http://voice.localhost https://voice.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
     }
   },
   "bundle": {

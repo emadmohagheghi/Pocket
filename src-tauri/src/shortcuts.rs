@@ -30,17 +30,21 @@ pub fn show_voice_capture(app: &AppHandle) {
 }
 
 /// Hold-to-record targets the MAIN window now: reveal it and tell the
-/// frontend's add-bar recorder to start. No quick-capture popup.
+/// frontend's add-bar recorder to start. No quick-capture popup. A sticky
+/// "Recording…" HUD appears on the active monitor until the capture ends.
 pub fn show_held_voice_capture(app: &AppHandle) {
     debug_log("held voice capture -> main window record mode");
     crate::commands::show_main_window(app);
     let _ = app.emit_to("main", "voice-hold-start", ());
+    crate::hud::show_hud(app, "Recording…", true);
 }
 
 /// Tell the main window that Shift was released: stop the recorder and save.
+/// The HUD flips to a brief "Captured" pill.
 pub fn finish_held_voice_capture(app: &AppHandle) {
     debug_log("held voice capture released -> requesting stop and save");
     let _ = app.emit_to("main", "voice-hold-release", ());
+    crate::hud::show_hud(app, "Captured", false);
 }
 
 fn show_capture(app: &AppHandle, mode: &str) {
@@ -62,9 +66,8 @@ fn show_capture(app: &AppHandle, mode: &str) {
 }
 
 /// Double-Shift tap path: grab the foreground app's selected text and save it
-/// straight into the active workspace — no window opens. On success a
-/// `play-sfx` event goes to the (hidden) capture webview, which plays the
-/// capture confirmation sound.
+/// straight into the active workspace — no window opens. On success a dark
+/// "Captured" pill is shown on the active monitor.
 pub fn save_text_capture_from_hotkey(app: &AppHandle) {
     // A visible capture panel is voice-only. Ignore a text gesture rather than
     // hiding an active recording and accidentally leaving its microphone live.
@@ -89,10 +92,11 @@ pub fn save_text_capture_from_hotkey(app: &AppHandle) {
                     return;
                 };
                 match crate::commands::save_hotkey_text_capture(&for_main, text) {
-                    Ok(item) => {
-                        grab_log(&format!("grab: saved id={} -> text sfx", item.id));
-                        let _ = for_main.emit_to("quick-capture", "play-sfx", "text");
+                    Ok(Some(item)) => {
+                        grab_log(&format!("grab: saved id={} -> HUD", item.id));
+                        crate::hud::show_hud(&for_main, "Captured", false);
                     }
+                    Ok(None) => grab_log("grab: duplicate of latest item -> skipped"),
                     Err(e) => grab_log(&format!("grab: direct save FAILED: {e}")),
                 }
             });

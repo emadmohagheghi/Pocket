@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
@@ -345,29 +345,115 @@ pub fn create_item(app: AppHandle, workspace_id: String, item: NewItem) -> AppRe
 
 /// Double-Shift tap path: save the grabbed selection straight into the active
 /// workspace without opening any window. Refreshes main-window listeners the
-/// same way `create_item` does.
-pub fn save_hotkey_text_capture(app: &AppHandle, text: String) -> AppResult<Item> {
-    let (ws_id, created) = {
+/// same way `create_item` does. Returns `Ok(None)` when the capture was
+/// skipped because it duplicates the newest item (rapid double captures of
+/// the same selection should not stack copies).
+pub fn save_hotkey_text_capture(app: &AppHandle, text: String) -> AppResult<Option<Item>> {
+    let trimmed = text.trim().to_string();
+    let (ws_id, duplicate_of_latest) = {
+        let store = app.state::<Mutex<Store>>();
+        let store = store.lock().unwrap();
+        let ws_id = store.settings.active_workspace_id.clone();
+        let duplicate_of_latest = store
+            .workspace_data(&ws_id)
+            .ok()
+            .and_then(|data| data.items.iter().max_by_key(|i| i.created_at))
+            .map(|latest| latest.content.trim() == trimmed)
+            .unwrap_or(false);
+        (ws_id, duplicate_of_latest)
+    };
+    if duplicate_of_latest {
+        crate::shortcuts::debug_log("hotkey text capture skipped: duplicate of latest item");
+        return Ok(None);
+    }
+    let created = {
         let store = app.state::<Mutex<Store>>();
         let mut store = store.lock().unwrap();
-        let ws_id = store.settings.active_workspace_id.clone();
-        let created = store.create_item(
+        store.create_item(
             &ws_id,
             NewItem {
                 item_type: ItemType::Text,
-                content: text,
+                content: trimmed,
                 title: None,
                 url: None,
             },
-        )?;
-        (ws_id, created)
+        )?
     };
     crate::shortcuts::debug_log(&format!(
         "hotkey text capture saved id={} ws={ws_id}",
         created.id
     ));
     items_changed(app, &ws_id);
-    Ok(created)
+    Ok(Some(created))
+}
+
+// ----------------------------------------------------------------------- undo
+
+/// One reversible primitive sent by the frontend's Ctrl+Z. `restore*` upserts
+/// the entity back with its original id/timestamps; `remove*` deletes it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum UndoStep {
+    RestoreItem {
+        workspace_id: String,
+        item: Item,
+    },
+    RestoreRecording {
+        workspace_id: String,
+        recording: Recording,
+    },
+    RemoveItem {
+        workspace_id: String,
+        item_id: String,
+    },
+    RemoveRecording {
+        workspace_id: String,
+        recording_id: String,
+    },
+}
+
+/// Apply a whole recorded action (possibly several primitives across
+/// workspaces) and notify listeners for every touched workspace.
+#[tauri::command]
+pub fn apply_undo(app: AppHandle, steps: Vec<UndoStep>) -> AppResult<()> {
+    let mut changed: Vec<String> = Vec::new();
+    {
+        let store = app.state::<Mutex<Store>>();
+        let mut store = store.lock().unwrap();
+        for step in steps {
+            let ws_id = match &step {
+                UndoStep::RestoreItem { workspace_id, .. } => workspace_id,
+                UndoStep::RestoreRecording { workspace_id, .. } => workspace_id,
+                UndoStep::RemoveItem { workspace_id, .. } => workspace_id,
+                UndoStep::RemoveRecording { workspace_id, .. } => workspace_id,
+            };
+            let ws_id = ws_id.clone();
+            match step {
+                UndoStep::RestoreItem { workspace_id, item } => {
+                    store.restore_item(&workspace_id, item)?
+                }
+                UndoStep::RestoreRecording {
+                    workspace_id,
+                    recording,
+                } => store.restore_recording(&workspace_id, recording)?,
+                UndoStep::RemoveItem {
+                    workspace_id,
+                    item_id,
+                } => store.delete_item(&workspace_id, &item_id)?,
+                UndoStep::RemoveRecording {
+                    workspace_id,
+                    recording_id,
+                } => store.delete_recording(&workspace_id, &recording_id)?,
+            }
+            if !changed.contains(&ws_id) {
+                changed.push(ws_id);
+            }
+        }
+    }
+    for ws_id in changed {
+        items_changed(&app, &ws_id);
+    }
+    Ok(())
 }
 
 #[tauri::command]

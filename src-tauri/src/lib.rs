@@ -2,6 +2,7 @@ mod commands;
 mod error;
 mod fsutil;
 mod gaming;
+mod hud;
 mod models;
 mod shortcuts;
 mod storage;
@@ -92,8 +93,8 @@ pub fn run() {
                     // the tray. Explicit Quit actions terminate the app.
                     api.prevent_close();
                     let _ = window.hide();
-                } else if window.label() == "quick-capture" {
-                    // The capture window always hides instead of quitting.
+                } else if window.label() == "quick-capture" || window.label() == "hud" {
+                    // The capture window and the HUD always hide instead of quitting.
                     api.prevent_close();
                     let _ = window.hide();
                 }
@@ -126,6 +127,7 @@ pub fn run() {
             commands::get_gaming_state,
             commands::open_voice_capture,
             commands::open_url,
+            commands::apply_undo,
             commands::frontend_log,
         ])
         .build(tauri::generate_context!())
