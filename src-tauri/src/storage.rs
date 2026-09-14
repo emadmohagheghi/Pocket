@@ -596,6 +596,47 @@ impl Store {
         Ok(())
     }
 
+    /// Delete many entries in one lock + one persist + one event broadcast.
+    /// Missing ids are skipped (a selection may contain already-deleted rows).
+    /// Recording audio is parked in the trash for undo, same as
+    /// `delete_recording`.
+    pub fn delete_entries_bulk(
+        &mut self,
+        ws_id: &str,
+        item_ids: &[String],
+        recording_ids: &[String],
+    ) -> AppResult<usize> {
+        let mut count = 0usize;
+        let removed_files: Vec<String> = {
+            let data = self.workspace_data_mut(ws_id)?;
+            let before = data.items.len();
+            data.items.retain(|i| !item_ids.contains(&i.id));
+            count += before - data.items.len();
+
+            let before = data.recordings.len();
+            let mut files: Vec<String> = Vec::new();
+            data.recordings.retain(|r| {
+                if recording_ids.iter().any(|id| id == &r.id) {
+                    files.push(r.file.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+            count += before - data.recordings.len();
+            files
+        };
+        for file in &removed_files {
+            let source = self.recording_path(ws_id, file);
+            let trash_path = self.trash_dir().join(file);
+            if fs::create_dir_all(self.trash_dir()).is_ok() {
+                let _ = fs::rename(&source, &trash_path);
+            }
+        }
+        self.persist_workspace(ws_id);
+        Ok(count)
+    }
+
     // ------------------------------------------------------------- recordings
 
     pub fn save_recording(

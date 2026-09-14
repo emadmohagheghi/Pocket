@@ -102,7 +102,6 @@ export function ItemList() {
   const setEntryDone = usePocket((s) => s.setEntryDone);
   const updateItem = usePocket((s) => s.updateItem);
   const deleteItem = usePocket((s) => s.deleteItem);
-  const deleteRecording = usePocket((s) => s.deleteRecording);
   const recordUndo = usePocket((s) => s.recordUndo);
   const undo = usePocket((s) => s.undo);
   const wsId = usePocket((s) => s.settings?.activeWorkspaceId ?? "");
@@ -252,24 +251,33 @@ export function ItemList() {
   const deleteSelected = useCallback(() => {
     if (selectedIds.size === 0) return;
     const undoSteps: UndoStep[] = [];
+    const itemIds: string[] = [];
+    const recordingIds: string[] = [];
     for (const entry of entries) {
       if (!selectedIds.has(entry.key)) continue;
       if (entry.kind === "text") {
         undoSteps.push({ type: "restoreItem", workspaceId: wsId, item: entry.item });
-        void deleteItem(entry.item.id);
+        itemIds.push(entry.item.id);
       } else {
         undoSteps.push({
           type: "restoreRecording",
           workspaceId: wsId,
           recording: entry.recording,
         });
-        void deleteRecording(entry.recording.id);
+        recordingIds.push(entry.recording.id);
       }
     }
-    recordUndo(undoSteps);
-    toast.add({ title: "Deleted", type: "success" });
-    setSelectedIds(new Set());
-  }, [entries, selectedIds, deleteItem, deleteRecording, recordUndo, wsId]);
+    // One bulk call: per-item deletes would round-trip and persist once per
+    // entry, which visibly lags with hundreds of selected rows.
+    void api
+      .deleteEntriesBulk(wsId, itemIds, recordingIds)
+      .then(() => {
+        recordUndo(undoSteps);
+        toast.add({ title: "Deleted", type: "success" });
+        setSelectedIds(new Set());
+      })
+      .catch(() => toast.add({ title: "Delete failed", type: "error" }));
+  }, [entries, selectedIds, recordUndo, wsId]);
 
   const moveSelectedTo = useCallback(
     (workspaceId: string, workspaceName: string) => {

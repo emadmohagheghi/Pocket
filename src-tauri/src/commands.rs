@@ -483,6 +483,24 @@ pub fn delete_item(app: AppHandle, workspace_id: String, item_id: String) -> App
     Ok(())
 }
 
+/// Bulk delete (Ctrl+A + Delete): one IPC call, one persist, one
+/// items-changed broadcast — deleting hundreds of entries must feel instant.
+#[tauri::command]
+pub fn delete_entries_bulk(
+    app: AppHandle,
+    workspace_id: String,
+    item_ids: Vec<String>,
+    recording_ids: Vec<String>,
+) -> AppResult<usize> {
+    let count = {
+        let store = app.state::<Mutex<Store>>();
+        let mut store = store.lock().unwrap();
+        store.delete_entries_bulk(&workspace_id, &item_ids, &recording_ids)?
+    };
+    items_changed(&app, &workspace_id);
+    Ok(count)
+}
+
 #[tauri::command]
 pub fn set_pinned(
     app: AppHandle,

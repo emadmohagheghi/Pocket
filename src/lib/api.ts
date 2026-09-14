@@ -48,6 +48,11 @@ export const api = {
   ) => invoke<Item>("update_item", { workspaceId, itemId, patch }),
   deleteItem: (workspaceId: string, itemId: string) =>
     invoke<void>("delete_item", { workspaceId, itemId }),
+  deleteEntriesBulk: (
+    workspaceId: string,
+    itemIds: string[],
+    recordingIds: string[]
+  ) => invoke<number>("delete_entries_bulk", { workspaceId, itemIds, recordingIds }),
 
   setPinned: (
     workspaceId: string,
