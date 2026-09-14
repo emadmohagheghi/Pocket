@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use tauri::http::header::{
     ACCESS_CONTROL_ALLOW_ORIGIN, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE,
 };
-use tauri::{AppHandle, Manager, Runtime, UriSchemeContext};
+use tauri::{Manager, Runtime, UriSchemeContext};
 use tauri_plugin_autostart::MacosLauncher;
 
 use shortcuts::AppFlags;
@@ -23,6 +23,14 @@ use storage::Store;
 
 pub fn run() {
     install_panic_logger();
+    // Load the store BEFORE the builder starts creating windows: config
+    // windows are built before setup() runs, and a fast webview (warm dev
+    // server or cached assets) can invoke commands before setup finishes —
+    // which used to panic with "state() called before manage()".
+    let (data_dir, fallback) = resolve_data_dir();
+    eprintln!("[pocket] data directory: {}", data_dir.display());
+    let store = Store::load(data_dir, fallback);
+    let start_minimized = store.settings.start_minimized;
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -40,14 +48,9 @@ pub fn run() {
             frontend_ready: std::sync::atomic::AtomicBool::new(false),
             show_requested: std::sync::atomic::AtomicBool::new(false),
         })
-        .setup(|app| {
+        .manage(Mutex::new(store))
+        .setup(move |app| {
             let handle = app.handle().clone();
-
-            let (data_dir, fallback) = resolve_data_dir(&handle);
-            eprintln!("[pocket] data directory: {}", data_dir.display());
-            let store = Store::load(data_dir, fallback);
-            let start_minimized = store.settings.start_minimized;
-            app.manage(Mutex::new(store));
 
             // Restore the persisted always-on-top preference. Applied from
             // setup so the window is pinned before it is ever revealed.
@@ -66,6 +69,11 @@ pub fn run() {
 
             // Fixed gestures: double-shift hook (text on tap, voice on hold).
             shortcuts::double_shift::spawn(handle.clone());
+            // The HUD window must never intercept mouse input while it is
+            // transparent-idle on screen.
+            hud::init_hud(&handle);
+            // Visual self-test hook for the capture HUD (POCKET_HUD_TEST=1).
+            hud::spawn_self_test_if_requested(handle.clone());
             // Gaming mode is temporarily unavailable while its detector is
             // being stabilised. Keep the module and IPC surface intact so it
             // can be re-enabled without a data or API migration.
@@ -141,8 +149,9 @@ pub fn run() {
 
 /// The data directory lives next to the executable ("installed folder")
 /// whenever that location is writable; otherwise we fall back to the
-/// per-user app-config directory so nothing is ever lost.
-fn resolve_data_dir(app: &AppHandle) -> (PathBuf, bool) {
+/// per-user app-config directory so nothing is ever lost. Resolved without
+/// an app handle so the store can be managed before any window exists.
+fn resolve_data_dir() -> (PathBuf, bool) {
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()));
@@ -152,10 +161,10 @@ fn resolve_data_dir(app: &AppHandle) -> (PathBuf, bool) {
             return (candidate, false);
         }
     }
-    let fallback = app
-        .path()
-        .app_config_dir()
-        .map(|p| p.join("data"))
+    // Matches app.path().app_config_dir().join("data") for our identifier
+    // (app.pocket.companion): %APPDATA%\app.pocket.companion\data.
+    let fallback = std::env::var("APPDATA")
+        .map(|d| PathBuf::from(d).join("app.pocket.companion").join("data"))
         .unwrap_or_else(|_| PathBuf::from("PocketData"));
     (fallback, true)
 }

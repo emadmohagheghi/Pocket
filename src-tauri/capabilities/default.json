@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for the main and quick-capture windows",
-  "windows": ["main", "quick-capture"],
+  "description": "Default capability for the main, quick-capture and hud windows",
+  "windows": ["main", "quick-capture", "hud"],
   "permissions": [
     "core:default",
     "core:window:allow-hide",

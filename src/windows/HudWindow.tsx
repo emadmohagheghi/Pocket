@@ -1,17 +1,33 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { cn } from "@/lib/utils";
 
 /**
- * Passive overlay window driven entirely from Rust (see src-tauri/src/hud.rs):
- * a dark pill at the bottom-center of the active monitor that reads
- * "Captured" after a hotkey text capture, or stays on "Recording…" while a
- * held Shift+Shift capture is live. It never takes focus or input.
+ * Passive overlay window, pre-created at startup and driven by Rust through
+ * the `hud-message` event (see src-tauri/src/hud.rs): a pill at the
+ * bottom-center of the active monitor that reads "Captured". With no text
+ * the whole window is transparent and invisible.
+ *
+ * The pill inverts the OS theme (light system -> dark pill, dark system ->
+ * light pill) so it always stands out.
  */
 export default function HudWindow() {
-  const [text, setText] = useState<string | null>(null);
+  const [text, setText] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get("hud")
+  );
+  const [systemDark, setSystemDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches
+  );
 
   useEffect(() => {
     document.body.style.background = "transparent";
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
   }, []);
 
   useEffect(() => {
@@ -32,10 +48,12 @@ export default function HudWindow() {
     <div className="flex h-screen items-end justify-center bg-transparent p-0">
       <div
         data-tauri-drag-region="false"
-        className={
-          "mb-0 select-none rounded-full bg-neutral-900 px-7 py-3 text-[17px] font-semibold leading-6 text-white shadow-[0_8px_28px_rgba(0,0,0,0.45)] ring-1 ring-white/10 " +
-          (text === "Recording…" ? "animate-pulse" : "")
-        }
+        className={cn(
+          "select-none rounded-full px-2 py-1 text-[18px] h-8",
+          systemDark
+            ? "bg-neutral-50 text-neutral-900"
+            : "bg-neutral-900 text-neutral-50"
+        )}
       >
         {text}
       </div>

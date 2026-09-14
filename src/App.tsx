@@ -12,6 +12,6 @@ export default function App() {
     document.title = label === "quick-capture" ? "Pocket Capture" : "Pocket";
   }, [label]);
 
-  if (label === "hud") return <HudWindow />;
+  if (label.startsWith("hud")) return <HudWindow />;
   return label === "quick-capture" ? <QuickCaptureWindow /> : <MainWindow />;
 }
