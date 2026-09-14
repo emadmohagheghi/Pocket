@@ -358,10 +358,10 @@ export function ItemList() {
   if (!data || entries.length === 0) return null;
 
   return (
-    // The feed opts out of the background drag region: rows contain text
-    // selection, waveform scrubbing, buttons and edit fields, none of which
-    // may ever start a window drag.
-    <div data-tauri-drag-region="false" className="flex h-full min-h-0 flex-col">
+    // Only the rows opt out of the background drag region (see ItemRow /
+    // VoiceRow): gaps between rows and the empty space below the feed stay
+    // draggable through the card container's deep region.
+    <div className="flex h-full min-h-0 flex-col">
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller>
           <MessageScrollerViewport>

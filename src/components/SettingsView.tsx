@@ -33,7 +33,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -448,9 +447,6 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
           className="shrink-0 border-b px-5 pb-3 pt-4"
         >
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>
-            Tune Pocket to your workflow. Everything stays on this device.
-          </DialogDescription>
         </DialogHeader>
         <div className="scroll-fade min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-3">
           <SettingsView />

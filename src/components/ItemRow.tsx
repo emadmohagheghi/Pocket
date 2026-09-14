@@ -322,9 +322,12 @@ export function ItemRow({
   return (
     <ContextMenu onOpenChange={(open) => setMenuOpen(open)}>
       <ContextMenuTrigger asChild>
+        {/* Rows opt out of the background drag region: plain click
+            selects, text is selectable, and edit fields live here. */}
         <li
           ref={rowRef}
           tabIndex={0}
+          data-tauri-drag-region="false"
           data-item-id={item.id}
           onKeyDown={onKeyDownRow}
           onClick={(e) => {

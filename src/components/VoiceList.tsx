@@ -114,9 +114,12 @@ export function VoiceRow({
   return (
     <ContextMenu onOpenChange={(open) => setMenuOpen(open)}>
       <ContextMenuTrigger asChild>
+        {/* Rows opt out of the background drag region: plain click
+            selects and the waveform is scrubbed with pointer drags. */}
         <li
           ref={rowRef}
           tabIndex={0}
+          data-tauri-drag-region="false"
           onKeyDown={onKeyDownRow}
           onClick={(e) => {
             if ((e.target as HTMLElement).closest("button, input")) return;
