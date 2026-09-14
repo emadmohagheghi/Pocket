@@ -220,7 +220,7 @@ export default function QuickCaptureWindow() {
 
   return (
     <div
-      data-tauri-drag-region
+      data-tauri-drag-region="deep"
       className="relative flex h-screen items-center gap-4 overflow-hidden rounded-3xl border border-border/60 bg-background py-3 pl-4 pr-5"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -229,12 +229,9 @@ export default function QuickCaptureWindow() {
         }
       }}
     >
-      {/* Draggable from the thin empty strips, the root padding, and the
-          non-interactive gaps of the status column. Buttons block dragging
-          on their own via the vendored drag-region script. */}
-      <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-2" aria-hidden />
-      <div data-tauri-drag-region className="absolute inset-x-0 bottom-0 h-2" aria-hidden />
-      <div data-tauri-drag-region="deep" className="flex min-w-0 flex-1 flex-col justify-center gap-3">
+      {/* The panel background is the drag region; the control buttons block
+          dragging on their own via the vendored drag-region script. */}
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-3">
         <QcStatusHeader
           savedFlash={savedFlash}
           recording={recorder.recording}

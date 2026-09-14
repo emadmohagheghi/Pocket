@@ -358,7 +358,10 @@ export function ItemList() {
   if (!data || entries.length === 0) return null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    // The feed opts out of the background drag region: rows contain text
+    // selection, waveform scrubbing, buttons and edit fields, none of which
+    // may ever start a window drag.
+    <div data-tauri-drag-region="false" className="flex h-full min-h-0 flex-col">
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller>
           <MessageScrollerViewport>
@@ -451,7 +454,10 @@ export function AddBar() {
   stopAndSaveRef.current = stopAndSaveVoice;
 
   return (
+    // The composer opts out of the background drag region: clicking anywhere
+    // in the capture bar focuses the field, never moves the window.
     <form
+      data-tauri-drag-region="false"
       onSubmit={(event) => {
         event.preventDefault();
         void save();

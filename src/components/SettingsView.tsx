@@ -11,7 +11,6 @@ import {
   Rocket,
   RotateCcw,
   ShieldCheck,
-  SlidersHorizontal,
   Upload,
 } from "lucide-react";
 
@@ -58,13 +57,10 @@ const NOTE_PREVIEW_OPTIONS = [
   { value: "0", label: "Full", ariaLabel: "Show full note" },
 ] as const;
 
-type SettingsTab = "general" | "privacy";
-
 export function SettingsView() {
   const settings = usePocket((s) => s.settings);
   const setSettings = usePocket((s) => s.setSettings);
   const workspaces = usePocket((s) => s.workspaces);
-  const [tab, setTab] = useState<SettingsTab>("general");
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [storageFailed, setStorageFailed] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -86,12 +82,6 @@ export function SettingsView() {
   useEffect(() => {
     loadStorage();
   }, [loadStorage]);
-
-  // Storage only matters on the Privacy tab, and an import changes what is
-  // stored — refresh whenever the tab is shown without data yet.
-  useEffect(() => {
-    if (tab === "privacy" && !storage && !storageFailed) loadStorage();
-  }, [tab, storage, storageFailed, loadStorage]);
 
   const totals = workspaces.reduce(
     (acc, w) => ({
@@ -157,39 +147,9 @@ export function SettingsView() {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-3">
-      {/* Segmented tab bar: pill container (p-1) with pill options, so the
-          nested radius rule holds trivially (full − 4px ≈ full). */}
-      <div
-        role="tablist"
-        aria-label="Settings sections"
-        className="grid shrink-0 grid-cols-2 gap-1 rounded-full border border-border/60 bg-muted/60 p-1"
-      >
-        <TabButton
-          active={tab === "general"}
-          onClick={() => setTab("general")}
-          icon={<SlidersHorizontal className="size-3.5" aria-hidden />}
-          label="General"
-          tabId="settings-tab-general"
-          panelId="settings-panel-general"
-        />
-        <TabButton
-          active={tab === "privacy"}
-          onClick={() => setTab("privacy")}
-          icon={<ShieldCheck className="size-3.5" aria-hidden />}
-          label="Privacy & Storage"
-          tabId="settings-tab-privacy"
-          panelId="settings-panel-privacy"
-        />
-      </div>
-
-      {tab === "general" ? (
-        <div
-          role="tabpanel"
-          id="settings-panel-general"
-          aria-labelledby="settings-tab-general"
-          className="flex min-w-0 flex-col gap-3"
-        >
-          <Card icon={<Rocket className="size-3.5" aria-hidden />} title="Startup">
+      <SectionHeading>General</SectionHeading>
+      <div className="flex min-w-0 flex-col gap-3">
+        <Card icon={<Rocket className="size-3.5" aria-hidden />} title="Startup">
             <Row label="Launch on startup">
               <Switch
                 checked={settings.launchOnStartup}
@@ -274,13 +234,8 @@ export function SettingsView() {
             </Row>
           </Card>
         </div>
-      ) : (
-        <div
-          role="tabpanel"
-          id="settings-panel-privacy"
-          aria-labelledby="settings-tab-privacy"
-          className="flex min-w-0 flex-col gap-3"
-        >
+        <SectionHeading>Privacy & Storage</SectionHeading>
+        <div className="flex min-w-0 flex-col gap-3">
           <Card
             icon={<ShieldCheck className="size-3.5" aria-hidden />}
             title="Private by design"
@@ -403,44 +358,17 @@ export function SettingsView() {
             )}
           </Card>
         </div>
-      )}
     </div>
   );
 }
 
-function TabButton({
-  active,
-  onClick,
-  icon,
-  label,
-  tabId,
-  panelId,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-  tabId: string;
-  panelId: string;
-}) {
+/* Top-level section heading dividing the single Settings page into
+   General and Privacy & Storage. */
+function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <button
-      type="button"
-      role="tab"
-      id={tabId}
-      aria-selected={active}
-      aria-controls={panelId}
-      onClick={onClick}
-      className={cn(
-        "flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        active
-          ? "bg-card text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      {icon}
-      {label}
-    </button>
+    <h2 className="px-1 pt-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      {children}
+    </h2>
   );
 }
 

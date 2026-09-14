@@ -165,15 +165,18 @@ export default function MainWindow() {
 
   return (
     <div className="relative h-screen bg-transparent p-3">
-      <div className="flex h-full flex-col overflow-hidden rounded-[36px] border border-border/60 bg-background">
-        {/* Window dragging: the thin strips plus the empty padding/gaps of
-            the header and footer rows. Interactive children (search field,
-            buttons, capture bar) block dragging on their own via the
-            vendored drag-region script, so only truly empty areas move the
-            window. Content rows are never drag regions. */}
-        <div data-tauri-drag-region className="h-3 w-full shrink-0" aria-hidden />
+      {/* The #1E1E1E application background itself is the window drag
+            region: any empty part of it moves the window. Interactive
+            children opt out — clickables (search, buttons, rows) block
+            dragging via the vendored drag-region script, and the feed plus
+            the composer explicitly carry data-tauri-drag-region="false" so
+            text selection, waveform scrubbing and typing never drag. */}
+      <div
+        data-tauri-drag-region="deep"
+        className="flex h-full flex-col overflow-hidden rounded-[36px] border border-border/60 bg-background"
+      >
         {/* Top bar: search + overflow menu. */}
-        <div data-tauri-drag-region="deep" className="flex items-center gap-2 px-3 pb-0">
+        <div className="flex items-center gap-2 px-3 pt-3">
           <SearchBar inputRef={searchInputRef} />
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
@@ -254,9 +257,8 @@ export default function MainWindow() {
 
         {/* Invisible audio engine; playback UI lives in the voice rows. */}
         <VoicePlayerEngine />
-        <div data-tauri-drag-region className="shrink-0 px-3 pb-0 pt-3">
+        <div className="shrink-0 px-3 pb-3 pt-3">
           <AddBar />
-          <div data-tauri-drag-region className="h-3 w-full" aria-hidden />
         </div>
       </div>
 
