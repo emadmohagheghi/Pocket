@@ -49,7 +49,7 @@ export default function HudWindow() {
       <div
         data-tauri-drag-region="false"
         className={cn(
-          "select-none rounded-full px-2 py-1 text-[18px] h-8",
+          "select-none rounded-xl px-4 py-2 text-[18px] h-10",
           systemDark
             ? "bg-neutral-50 text-neutral-900"
             : "bg-neutral-900 text-neutral-50"

@@ -15,7 +15,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 const AUTO_HIDE_MS: u64 = 1500;
 /// Distance from the bottom of the monitor's work area.
-const BOTTOM_MARGIN_PX: i32 = 48;
+const BOTTOM_MARGIN_PX: i32 = 120;
 
 static HUD_SEQ: AtomicU64 = AtomicU64::new(0);
 
