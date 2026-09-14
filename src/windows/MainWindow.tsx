@@ -166,11 +166,14 @@ export default function MainWindow() {
   return (
     <div className="relative h-screen bg-transparent p-3">
       <div className="flex h-full flex-col overflow-hidden rounded-[36px] border border-border/60 bg-background">
-        {/* Dedicated drag strips: the window is only draggable from these
-            empty areas, never from content. */}
+        {/* Window dragging: the thin strips plus the empty padding/gaps of
+            the header and footer rows. Interactive children (search field,
+            buttons, capture bar) block dragging on their own via the
+            vendored drag-region script, so only truly empty areas move the
+            window. Content rows are never drag regions. */}
         <div data-tauri-drag-region className="h-3 w-full shrink-0" aria-hidden />
         {/* Top bar: search + overflow menu. */}
-        <div className="flex items-center gap-2 px-3 pb-0">
+        <div data-tauri-drag-region="deep" className="flex items-center gap-2 px-3 pb-0">
           <SearchBar inputRef={searchInputRef} />
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
@@ -251,7 +254,7 @@ export default function MainWindow() {
 
         {/* Invisible audio engine; playback UI lives in the voice rows. */}
         <VoicePlayerEngine />
-        <div className="shrink-0 px-3 pb-0 pt-3">
+        <div data-tauri-drag-region className="shrink-0 px-3 pb-0 pt-3">
           <AddBar />
           <div data-tauri-drag-region className="h-3 w-full" aria-hidden />
         </div>

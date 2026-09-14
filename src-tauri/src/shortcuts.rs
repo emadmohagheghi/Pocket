@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -318,13 +318,20 @@ fn send_ctrl_c() -> bool {
 pub fn debug_log(message: &str) {
     if std::env::var("POCKET_DEBUG").as_deref() == Ok("1") {
         let t = now_ms() % 1_000_000;
-        let tid = unsafe { windows::Win32::System::Threading::GetCurrentThreadId() };
-        eprintln!(
-            "[pocket {:>6}.{:03} t{:x}] {message}",
-            t / 1000,
-            t % 1000,
-            tid
-        );
+        #[cfg(windows)]
+        {
+            let tid = unsafe { windows::Win32::System::Threading::GetCurrentThreadId() };
+            eprintln!(
+                "[pocket {:>6}.{:03} t{:x}] {message}",
+                t / 1000,
+                t % 1000,
+                tid
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            eprintln!("[pocket {:>6}.{:03}] {message}", t / 1000, t % 1000);
+        }
     }
 }
 
@@ -343,6 +350,7 @@ fn now_ms() -> u64 {
 pub mod double_shift {
     use super::*;
     use std::cell::RefCell;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
     use windows::Win32::System::Threading::GetCurrentThreadId;
