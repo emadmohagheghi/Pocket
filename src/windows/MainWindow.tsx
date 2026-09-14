@@ -4,6 +4,7 @@ import {
   FolderOpen,
   Layers,
   MoreHorizontal,
+  Download,
   Pin,
   Settings as SettingsIcon,
   X,
@@ -27,10 +28,24 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
-import { listen } from "@tauri-apps/api/event";
-import { Toaster } from "@/components/ui/toast";
+import { Toaster, toast } from "@/components/ui/toast";
 import { applyTheme } from "@/lib/theme";
-import { playPocketSound, unlockPocketAudio } from "@/lib/sound";
+
+const RELEASES_URL = "https://github.com/emadmohagheghi/Pocket/releases";
+const LATEST_RELEASE_API = "https://api.github.com/repos/emadmohagheghi/Pocket/releases/latest";
+
+/** True when `latest` (e.g. "0.2.2") is newer than `current` ("0.2.1"). */
+function isNewerVersion(latest: string, current: string): boolean {
+  const parse = (v: string) =>
+    v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const a = parse(latest);
+  const b = parse(current);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] ?? 0) > (b[i] ?? 0)) return true;
+    if ((a[i] ?? 0) < (b[i] ?? 0)) return false;
+  }
+  return false;
+}
 
 export default function MainWindow() {
   // Field selectors: keeps this window (and everything subscribed below it)
@@ -42,6 +57,7 @@ export default function MainWindow() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const alwaysOnTop = settings?.alwaysOnTop ?? false;
 
@@ -52,11 +68,9 @@ export default function MainWindow() {
     void setSettings({ alwaysOnTop: !alwaysOnTop }).catch(() => {});
   }, [alwaysOnTop, setSettings]);
   const openWorkspaces = useCallback(() => {
-    playPocketSound("open");
     setWorkspacesOpen(true);
   }, []);
   const openSettings = useCallback(() => {
-    playPocketSound("open");
     setSettingsOpen(true);
   }, []);
   const openDataFolder = useCallback(() => {
@@ -89,34 +103,33 @@ export default function MainWindow() {
     document.body.style.background = "transparent";
   }, []);
 
-  // Keep the shared AudioContext armed so hotkey-triggered cues (record
-  // start/stop from a Shift+Shift hold while Pocket was unfocused) sound.
+  // One-shot update check against the GitHub releases API; a failure is
+  // silently ignored (offline, rate limit, …).
   useEffect(() => {
-    void unlockPocketAudio();
-    const arm = () => void unlockPocketAudio();
-    window.addEventListener("focus", arm);
-    window.addEventListener("pointerdown", arm);
-    window.addEventListener("keydown", arm);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(LATEST_RELEASE_API, {
+          signal: controller.signal,
+          headers: { Accept: "application/vnd.github+json" },
+        });
+        window.clearTimeout(timer);
+        if (!res.ok) return;
+        const data = (await res.json()) as { tag_name?: string };
+        const latest = data.tag_name ?? "";
+        const current = __APP_VERSION__;
+        if (!cancelled && latest && isNewerVersion(latest, current)) {
+          setUpdateAvailable(true);
+          toast.add({ title: "New update available", type: "success" });
+        }
+      } catch {
+        // No update check result — keep quiet.
+      }
+    })();
     return () => {
-      window.removeEventListener("focus", arm);
-      window.removeEventListener("pointerdown", arm);
-      window.removeEventListener("keydown", arm);
-    };
-  }, []);
-
-  // Double-shift hold (native hook) drives the in-app recorder: bridge the
-  // backend events onto window events the AddBar listens for.
-  useEffect(() => {
-    const unlisten = [
-      listen("voice-hold-start", () =>
-        window.dispatchEvent(new Event("pocket-voice-hold-start"))
-      ),
-      listen("voice-hold-release", () =>
-        window.dispatchEvent(new Event("pocket-voice-hold-stop"))
-      ),
-    ];
-    return () => {
-      void Promise.all(unlisten).then((uns) => uns.forEach((u) => u()));
+      cancelled = true;
     };
   }, []);
 
@@ -179,10 +192,16 @@ export default function MainWindow() {
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-10 shrink-0 rounded-[24px] border border-border/60 bg-card text-muted-foreground hover:bg-card! hover:text-muted-foreground active:bg-card! aria-expanded:bg-card! aria-expanded:text-muted-foreground!"
+                className="relative size-10 shrink-0 rounded-[24px] border border-border/60 bg-card text-muted-foreground hover:bg-card! hover:text-muted-foreground active:bg-card! aria-expanded:bg-card! aria-expanded:text-muted-foreground!"
                 aria-label="More options"
               >
                 <MoreHorizontal />
+                {updateAvailable && (
+                  <span
+                    className="absolute right-2 top-2 size-2 rounded-full bg-orange-500"
+                    aria-hidden
+                  />
+                )}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
@@ -214,6 +233,17 @@ export default function MainWindow() {
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
+                {updateAvailable && (
+                  <DropdownMenuItem
+                    className="whitespace-nowrap text-orange-600 dark:text-orange-400"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void api.openUrl(RELEASES_URL).catch(() => {});
+                    }}
+                  >
+                    <Download /> New update available
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   className="whitespace-nowrap"
                   onClick={openDataFolder}

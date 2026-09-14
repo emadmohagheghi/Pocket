@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { UndoStep } from "@/store";
 import type {
   Counts,
   ExportSummary,
@@ -47,6 +48,11 @@ export const api = {
   ) => invoke<Item>("update_item", { workspaceId, itemId, patch }),
   deleteItem: (workspaceId: string, itemId: string) =>
     invoke<void>("delete_item", { workspaceId, itemId }),
+  deleteEntriesBulk: (
+    workspaceId: string,
+    itemIds: string[],
+    recordingIds: string[]
+  ) => invoke<number>("delete_entries_bulk", { workspaceId, itemIds, recordingIds }),
 
   setPinned: (
     workspaceId: string,
@@ -74,6 +80,8 @@ export const api = {
   copyToClipboard: (text: string) =>
     invoke<void>("copy_to_clipboard", { text }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
+  applyUndo: (steps: UndoStep[]) =>
+    invoke<void>("apply_undo", { steps }),
 
   updateSettings: (patch: Partial<Settings>) =>
     invoke<Settings>("update_settings", { patch }),

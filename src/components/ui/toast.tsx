@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Toast as ToastPrimitive } from "@base-ui/react/toast"
+import { Toast as ToastPrimitive, type ToastManagerAddOptions } from "@base-ui/react/toast"
 import { cn } from "@/lib/utils"
 import { Check } from "lucide-react"
 
@@ -122,6 +122,57 @@ function ToastViewport({ className, ...props }: ToastPrimitive.Viewport.Props) {
 
 const toast = ToastPrimitive.createToastManager()
 
+// Base UI pauses toast timers while the window is unfocused (and WebView2
+// throttles page timers for background windows), so an in-app toast could
+// linger forever until the window was focused again. Track expiry deadlines
+// here and close them from a dedicated worker whose timers keep running
+// regardless of focus.
+const TOAST_TIMEOUT_MS = 5000
+const expirations = new Map<string, number>()
+let expiryWorker: Worker | null = null
+
+function ensureExpiryWorker(): Worker | null {
+  if (expiryWorker) return expiryWorker
+  try {
+    expiryWorker = new Worker(
+      new URL("../../lib/toast-expiry-worker.ts", import.meta.url),
+      { type: "module" }
+    )
+    expiryWorker.onmessage = () => {
+      const now = Date.now()
+      for (const [id, deadline] of expirations) {
+        if (now >= deadline) {
+          expirations.delete(id)
+          toast.close(id)
+        }
+      }
+    }
+  } catch {
+    // Worker unavailable (e.g. blocked by the environment); Base UI's own
+    // timers still close toasts whenever the window is focused.
+  }
+  return expiryWorker
+}
+
+/** App-scoped add(): same manager, plus focus-independent expiry. */
+function addToast(options: ToastManagerAddOptions<any>) {
+  const id = toast.add({ ...options, timeout: TOAST_TIMEOUT_MS })
+  ensureExpiryWorker()
+  expirations.set(id, Date.now() + TOAST_TIMEOUT_MS)
+  return id
+}
+
+const toastWithExpiry = {
+  add: addToast,
+  close: (id?: string) => {
+    if (id) expirations.delete(id)
+    else expirations.clear()
+    return toast.close(id)
+  },
+  promise: toast.promise.bind(toast),
+  update: toast.update.bind(toast),
+}
+
 function ToastProvider({ ...props }: ToastPrimitive.Provider.Props) {
   return <ToastPrimitive.Provider {...props} />
 }
@@ -156,6 +207,6 @@ export {
   ToastTitle,
   ToastViewport,
   createToastManager,
-  toast,
+  toastWithExpiry as toast,
   useToastManager,
 }

@@ -29,20 +29,6 @@ pub fn show_voice_capture(app: &AppHandle) {
     show_capture(app, "voice");
 }
 
-/// Hold-to-record targets the MAIN window now: reveal it and tell the
-/// frontend's add-bar recorder to start. No quick-capture popup.
-pub fn show_held_voice_capture(app: &AppHandle) {
-    debug_log("held voice capture -> main window record mode");
-    crate::commands::show_main_window(app);
-    let _ = app.emit_to("main", "voice-hold-start", ());
-}
-
-/// Tell the main window that Shift was released: stop the recorder and save.
-pub fn finish_held_voice_capture(app: &AppHandle) {
-    debug_log("held voice capture released -> requesting stop and save");
-    let _ = app.emit_to("main", "voice-hold-release", ());
-}
-
 fn show_capture(app: &AppHandle, mode: &str) {
     let Some(win) = app.get_webview_window("quick-capture") else {
         eprintln!("[pocket] quick-capture window not found!");
@@ -62,9 +48,8 @@ fn show_capture(app: &AppHandle, mode: &str) {
 }
 
 /// Double-Shift tap path: grab the foreground app's selected text and save it
-/// straight into the active workspace — no window opens. On success a
-/// `play-sfx` event goes to the (hidden) capture webview, which plays the
-/// capture confirmation sound.
+/// straight into the active workspace — no window opens. On success a dark
+/// "Captured" pill is shown on the active monitor.
 pub fn save_text_capture_from_hotkey(app: &AppHandle) {
     // A visible capture panel is voice-only. Ignore a text gesture rather than
     // hiding an active recording and accidentally leaving its microphone live.
@@ -89,10 +74,11 @@ pub fn save_text_capture_from_hotkey(app: &AppHandle) {
                     return;
                 };
                 match crate::commands::save_hotkey_text_capture(&for_main, text) {
-                    Ok(item) => {
-                        grab_log(&format!("grab: saved id={} -> text sfx", item.id));
-                        let _ = for_main.emit_to("quick-capture", "play-sfx", "text");
+                    Ok(Some(item)) => {
+                        grab_log(&format!("grab: saved id={} -> HUD", item.id));
+                        crate::hud::show_hud(&for_main, "Captured", false);
                     }
+                    Ok(None) => grab_log("grab: duplicate of latest item -> skipped"),
                     Err(e) => grab_log(&format!("grab: direct save FAILED: {e}")),
                 }
             });
@@ -364,16 +350,6 @@ pub mod double_shift {
     const LLKHF_INJECTED: KBDLLHOOKSTRUCT_FLAGS = KBDLLHOOKSTRUCT_FLAGS(0x10);
     const DOUBLE_SHIFT_WINDOW_MS: u64 = 550;
     const REPEAT_GUARD_MS: u64 = 60;
-    /// Second Shift press held this long opens the voice panel instead of
-    /// directly saving the selected text.
-    /// The watcher polls the physical key state, so a quick tap-tap-release
-    /// still resolves to text as soon as the release is seen (no added
-    /// latency), while a tap-hold resolves to voice after this threshold.
-    const HOLD_FOR_VOICE_MS: u64 = 400;
-    const HOLD_POLL_MS: u64 = 15;
-    /// Consecutive "key up" polls required to trust a release during the
-    /// hold window (3 x 15ms = 45ms of sustained up state).
-    const HOLD_RELEASE_DEBOUNCE_POLLS: u32 = 3;
     /// Reconcile the hook state with the real keyboard often enough to catch
     /// a release even when Windows drops the corresponding low-level event.
     const RELEASE_RECONCILE_MS: u64 = 15;
@@ -766,16 +742,6 @@ pub mod double_shift {
         }
     }
 
-    /// Pure hold decision, unit-tested below. `released_early` means the
-    /// second press was released before the hold threshold elapsed.
-    fn hold_decision(released_early: bool) -> &'static str {
-        if released_early {
-            "text"
-        } else {
-            "voice"
-        }
-    }
-
     fn try_trigger(app: &AppHandle, side: ShiftSide) {
         let shared = app.state::<super::AppFlags>();
         if shared.gaming.load(Ordering::Relaxed) {
@@ -783,123 +749,32 @@ pub mod double_shift {
             return;
         }
         debug_log(&format!("DOUBLE {side:?} SHIFT detected"));
-        // Never touch window APIs from inside the hook callback: the hold
-        // watcher runs on its own thread and dispatches the window work to
-        // the main thread, so the callback returns instantly (a slow
-        // callback gets the hook removed by the system).
-        let app_handle = app.clone();
-        let thread_name = match side {
-            ShiftSide::Left => "left-shift-hold-watch",
-            ShiftSide::Right => "right-shift-hold-watch",
-        };
+        // A double-Shift tap always saves the selected text directly. (The
+        // old hold-to-record gesture was removed: recording has no hotkey.)
+        // Never touch window APIs from inside the hook callback: dispatch
+        // the save to a worker thread so the callback returns instantly (a
+        // slow callback gets the hook removed by the system). A worker — not
+        // the main thread — is important: the save ends by creating the HUD
+        // webview window, and a window created from inside a
+        // run_on_main_thread task builds but never paints.
+        let handle = app.clone();
         std::thread::Builder::new()
-            .name(thread_name.into())
+            .name("hotkey-text-save".into())
             .spawn(move || {
-                if side == ShiftSide::Right {
-                    watch_right_hold(app_handle);
+                let shared = handle.state::<super::AppFlags>();
+                if shared.gaming.load(Ordering::Relaxed) {
+                    debug_log("double-shift suppressed after gaming mode enabled");
                     return;
                 }
-
-                // Wait for either an early release (tap -> direct text save)
-                // or the hold threshold elapsing with Shift still down (hold
-                // -> voice panel). Polling resolves a tap as soon as release
-                // is seen instead of adding a fixed delay.
-                let mut elapsed_ms: u64 = 0;
-                let mut released_early = false;
-                // A single "up" sample can be a bounce or an OS sampling
-                // glitch and would wrongly cancel the hold. Require several
-                // consecutive up polls before treating Shift as released.
-                let mut up_streak: u32 = 0;
-                while elapsed_ms < HOLD_FOR_VOICE_MS {
-                    if is_shift_physically_down(ShiftSide::Left) {
-                        up_streak = 0;
-                    } else {
-                        up_streak += 1;
-                        if up_streak >= HOLD_RELEASE_DEBOUNCE_POLLS {
-                            released_early = true;
-                            break;
-                        }
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(HOLD_POLL_MS));
-                    elapsed_ms += HOLD_POLL_MS;
-                }
-                let mode = hold_decision(released_early);
-                // E2E-injected keys have no physical state, so they always
-                // look "released": they correctly resolve to direct text save.
-                debug_log(&format!(
-                    "double-shift hold watch: released_early={released_early} elapsed={elapsed_ms}ms -> {mode} mode"
-                ));
-                let for_main = app_handle.clone();
-                let _ = app_handle.run_on_main_thread(move || {
-                    // Re-check the gaming flag: it may have flipped during
-                    // the short hold window.
-                    let shared = for_main.state::<super::AppFlags>();
-                    if shared.gaming.load(Ordering::Relaxed) {
-                        debug_log("double-shift hold result suppressed (gaming mode)");
-                        return;
-                    }
-                    if mode == "voice" {
-                        super::show_held_voice_capture(&for_main);
-                    } else {
-                        super::save_text_capture_from_hotkey(&for_main);
-                    }
-                });
+                super::save_text_capture_from_hotkey(&handle);
             })
             .ok();
-    }
-
-    /// Right Shift is push-to-record: a quick double tap does nothing, while
-    /// holding the second press starts recording and release saves it.
-    fn watch_right_hold(app_handle: AppHandle) {
-        let mut elapsed_ms: u64 = 0;
-        let mut up_streak: u32 = 0;
-        while elapsed_ms < HOLD_FOR_VOICE_MS {
-            if is_shift_physically_down(ShiftSide::Right) {
-                up_streak = 0;
-            } else {
-                up_streak += 1;
-                if up_streak >= HOLD_RELEASE_DEBOUNCE_POLLS {
-                    debug_log("right double-shift released early -> no action");
-                    return;
-                }
-            }
-            std::thread::sleep(std::time::Duration::from_millis(HOLD_POLL_MS));
-            elapsed_ms += HOLD_POLL_MS;
-        }
-
-        let for_open = app_handle.clone();
-        let _ = app_handle.run_on_main_thread(move || {
-            let shared = for_open.state::<super::AppFlags>();
-            if shared.gaming.load(Ordering::Relaxed) {
-                debug_log("right-shift hold suppressed after gaming mode enabled");
-                return;
-            }
-            super::show_held_voice_capture(&for_open);
-        });
-
-        let mut release_streak: u32 = 0;
-        loop {
-            if is_shift_physically_down(ShiftSide::Right) {
-                release_streak = 0;
-            } else {
-                release_streak += 1;
-                if release_streak >= HOLD_RELEASE_DEBOUNCE_POLLS {
-                    break;
-                }
-            }
-            std::thread::sleep(std::time::Duration::from_millis(HOLD_POLL_MS));
-        }
-
-        let for_release = app_handle.clone();
-        let _ = app_handle.run_on_main_thread(move || {
-            super::finish_held_voice_capture(&for_release);
-        });
     }
 
     #[cfg(test)]
     mod hook_tests {
         use super::{
-            begin_shift_press, hold_decision, is_double_press, PressState, DOUBLE_SHIFT_WINDOW_MS,
+            begin_shift_press, is_double_press, PressState, DOUBLE_SHIFT_WINDOW_MS,
             REPEAT_GUARD_MS,
         };
 
@@ -965,14 +840,6 @@ pub mod double_shift {
         #[test]
         fn intervening_key_cancels_the_pair() {
             assert!(!is_double_press(1000, 1150, true, true));
-        }
-
-        #[test]
-        fn hold_resolves_to_voice_and_tap_to_text() {
-            // Second press released before the threshold -> direct text save.
-            assert_eq!(hold_decision(true), "text");
-            // Still held when the threshold elapses -> voice mode.
-            assert_eq!(hold_decision(false), "voice");
         }
     }
 }

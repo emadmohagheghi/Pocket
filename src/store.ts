@@ -18,6 +18,19 @@ function errMessage(e: unknown): string {
   return String(e);
 }
 
+/**
+ * One reversible primitive. `restore*` steps upsert the full entity back
+ * (original id and timestamps preserved); `remove*` steps delete it again.
+ * A user-visible action (delete, merge, move, …) is a list of these.
+ */
+export type UndoStep =
+  | { type: "restoreItem"; workspaceId: string; item: Item }
+  | { type: "restoreRecording"; workspaceId: string; recording: Recording }
+  | { type: "removeItem"; workspaceId: string; itemId: string }
+  | { type: "removeRecording"; workspaceId: string; recordingId: string };
+
+const UNDO_HISTORY_LIMIT = 10;
+
 interface PlayerTrack {
   recordingId: string;
   name: string;
@@ -36,6 +49,8 @@ interface PocketStore {
   focusItemId: string | null;
   editRequest: { id: string; kind: EntryKind; nonce: number } | null;
   gaming: boolean;
+  /** Recent actions for Ctrl+Z, newest last. */
+  undoHistory: UndoStep[][];
 
   /** Shared voice player: one track at a time, driven by PlayerBar. */
   player: PlayerTrack | null;
@@ -77,6 +92,11 @@ interface PocketStore {
   renameRecording: (recordingId: string, name: string) => Promise<void>;
   deleteRecording: (recordingId: string) => Promise<void>;
 
+  /** Record one user action for Ctrl+Z (oldest actions dropped past 10). */
+  recordUndo: (steps: UndoStep[]) => void;
+  /** Undo the most recent action. Returns true when something was undone. */
+  undo: () => Promise<boolean>;
+
   setSettings: (patch: Partial<Settings>) => Promise<void>;
 }
 
@@ -92,6 +112,7 @@ export const usePocket = create<PocketStore>((set, get) => ({
   focusItemId: null,
   editRequest: null,
   gaming: false,
+  undoHistory: [],
   player: null,
   playerPlaying: false,
   playerTime: 0,
@@ -215,6 +236,9 @@ export const usePocket = create<PocketStore>((set, get) => ({
     if (!wsId || !content.trim()) return null;
     try {
       const item = await api.createItem(wsId, { itemType: "text", content });
+      get().recordUndo([
+        { type: "removeItem", workspaceId: wsId, itemId: item.id },
+      ]);
       return item;
     } catch (e) {
       void api.log(`createItem FAILED: ${errMessage(e)}`);
@@ -226,7 +250,13 @@ export const usePocket = create<PocketStore>((set, get) => ({
     const wsId = get().settings?.activeWorkspaceId;
     if (!wsId) return;
     try {
+      const prev = get().data?.items.find((i) => i.id === itemId);
       await api.updateItem(wsId, itemId, patch as Record<string, unknown>);
+      if (prev) {
+        get().recordUndo([
+          { type: "restoreItem", workspaceId: wsId, item: prev },
+        ]);
+      }
     } catch (e) {
       void api.log(`updateItem FAILED: ${errMessage(e)}`);
     }
@@ -236,7 +266,13 @@ export const usePocket = create<PocketStore>((set, get) => ({
     const wsId = get().settings?.activeWorkspaceId;
     if (!wsId) return;
     try {
+      const prev = get().data?.items.find((i) => i.id === itemId);
       await api.deleteItem(wsId, itemId);
+      if (prev) {
+        get().recordUndo([
+          { type: "restoreItem", workspaceId: wsId, item: prev },
+        ]);
+      }
     } catch (e) {
       void api.log(`deleteItem FAILED: ${errMessage(e)}`);
     }
@@ -246,7 +282,24 @@ export const usePocket = create<PocketStore>((set, get) => ({
     const wsId = get().settings?.activeWorkspaceId;
     if (!wsId) return;
     try {
+      const prev =
+        kind === "text"
+          ? get().data?.items.find((i) => i.id === entryId)
+          : undefined;
+      const prevRec =
+        kind === "voice"
+          ? get().data?.recordings.find((r) => r.id === entryId)
+          : undefined;
       await api.setPinned(wsId, kind, entryId, done);
+      if (prev) {
+        get().recordUndo([
+          { type: "restoreItem", workspaceId: wsId, item: prev },
+        ]);
+      } else if (prevRec) {
+        get().recordUndo([
+          { type: "restoreRecording", workspaceId: wsId, recording: prevRec },
+        ]);
+      }
     } catch (e) {
       void api.log(`setEntryDone FAILED: ${errMessage(e)}`);
     }
@@ -266,9 +319,36 @@ export const usePocket = create<PocketStore>((set, get) => ({
     const wsId = get().settings?.activeWorkspaceId;
     if (!wsId) return;
     try {
+      const prev = get().data?.recordings.find((r) => r.id === recordingId);
       await api.deleteRecording(wsId, recordingId);
+      if (prev) {
+        get().recordUndo([
+          { type: "restoreRecording", workspaceId: wsId, recording: prev },
+        ]);
+      }
     } catch (e) {
       void api.log(`deleteRecording FAILED: ${errMessage(e)}`);
+    }
+  },
+
+  recordUndo: (steps) => {
+    if (steps.length === 0) return;
+    set((s) => ({
+      undoHistory: [...s.undoHistory, steps].slice(-UNDO_HISTORY_LIMIT),
+    }));
+  },
+
+  undo: async () => {
+    const history = get().undoHistory;
+    if (history.length === 0) return false;
+    const steps = history[history.length - 1];
+    set({ undoHistory: history.slice(0, -1) });
+    try {
+      await api.applyUndo(steps);
+      return true;
+    } catch (e) {
+      void api.log(`undo FAILED: ${errMessage(e)}`);
+      return false;
     }
   },
 

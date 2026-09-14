@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 
 import { usePocket } from "@/store";
 import { api } from "@/lib/api";
-import { playPocketSound } from "@/lib/sound";
 import type { Counts } from "@/types";
 import {
   AlertDialog,
@@ -67,7 +66,6 @@ export function DeleteWorkspaceDialog({ workspaceId, onClose }: Props) {
     setBusy(true);
     try {
       await deleteWorkspace(workspaceId);
-      playPocketSound("destructive");
     } finally {
       setBusy(false);
       onClose();

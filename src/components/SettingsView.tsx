@@ -17,11 +17,6 @@ import {
 import { usePocket } from "@/store";
 import { api } from "@/lib/api";
 import { cn, formatBytes } from "@/lib/utils";
-import {
-  arePocketSoundsEnabled,
-  playPocketSound,
-  setPocketSoundsEnabled,
-} from "@/lib/sound";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -64,7 +59,6 @@ export function SettingsView() {
   const [storageFailed, setStorageFailed] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [soundsEnabled, setSoundsEnabled] = useState(arePocketSoundsEnabled);
   const [backupStatus, setBackupStatus] = useState<{
     tone: "ok" | "err";
     text: string;
@@ -103,13 +97,11 @@ export function SettingsView() {
       if (!path) return;
 
       const summary = await api.exportBackup(path);
-      playPocketSound("success");
       setBackupStatus({
         tone: "ok",
         text: `Exported ${summary.items} ${summary.items === 1 ? "note" : "notes"} and ${summary.recordings} voice ${summary.recordings === 1 ? "note" : "notes"}.`,
       });
     } catch {
-      playPocketSound("error");
       setBackupStatus({ tone: "err", text: "Export failed. Please try again." });
     } finally {
       setExporting(false);
@@ -128,14 +120,12 @@ export function SettingsView() {
       if (typeof path !== "string") return;
 
       const summary = await api.importBackup(path);
-      playPocketSound("success");
       setBackupStatus({
         tone: "ok",
         text: `Imported ${summary.itemsImported} ${summary.itemsImported === 1 ? "note" : "notes"} and ${summary.recordingsImported} voice ${summary.recordingsImported === 1 ? "note" : "notes"} (merged, nothing overwritten).`,
       });
       loadStorage();
     } catch {
-      playPocketSound("error");
       setBackupStatus({ tone: "err", text: "Import failed. Please try again." });
     } finally {
       setImporting(false);
@@ -165,7 +155,7 @@ export function SettingsView() {
             </Row>
           </Card>
 
-          <Card icon={<Palette className="size-3.5" aria-hidden />} title="Appearance & sound">
+          <Card icon={<Palette className="size-3.5" aria-hidden />} title="Appearance">
             <Row label="Theme">
               <Select
                 value={settings.theme}
@@ -182,21 +172,6 @@ export function SettingsView() {
                   </SelectGroup>
                 </SelectContent>
               </Select>
-            </Row>
-            <Row
-              label="Interface sounds"
-              description="Quiet cues for saves, copies and recording actions"
-            >
-              <Switch
-                checked={soundsEnabled}
-                onCheckedChange={(enabled) => {
-                  if (!enabled) playPocketSound("toggleOff");
-                  setSoundsEnabled(enabled);
-                  setPocketSoundsEnabled(enabled);
-                  if (enabled) playPocketSound("toggleOn");
-                }}
-                aria-label="Interface sounds"
-              />
             </Row>
           </Card>
 

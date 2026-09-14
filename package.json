@@ -1,7 +1,7 @@
 {
   "name": "pocket",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A lightweight, privacy-first Windows companion for capturing text and voice notes.",
   "license": "MIT",
   "repository": {
@@ -29,7 +29,6 @@
     "@shadcn/react": "^0.3.1",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.3",
-    "@web-kits/audio": "^0.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cn": "^0.3.0",

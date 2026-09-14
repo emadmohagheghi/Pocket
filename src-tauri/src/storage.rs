@@ -81,11 +81,19 @@ impl Store {
     pub fn recording_path(&self, ws_id: &str, file: &str) -> PathBuf {
         self.voices_dir(ws_id).join(file)
     }
+    /// Deleted recordings are parked here (not erased) so Ctrl+Z can put them
+    /// back. Cleared on startup: undo history is in-memory only and never
+    /// survives a restart.
+    fn trash_dir(&self) -> PathBuf {
+        self.data_dir.join("voices").join(".trash")
+    }
 
     // ------------------------------------------------------------------ load
 
     pub fn load(data_dir: PathBuf, uses_fallback_location: bool) -> Store {
         fs::create_dir_all(&data_dir).ok();
+        // Undo never survives a restart, so nothing parked for undo is needed.
+        let _ = fs::remove_dir_all(data_dir.join("voices").join(".trash"));
 
         // Settings: fall back to defaults on missing/corrupt file (keep the
         // corrupt file around for recovery).
@@ -588,6 +596,47 @@ impl Store {
         Ok(())
     }
 
+    /// Delete many entries in one lock + one persist + one event broadcast.
+    /// Missing ids are skipped (a selection may contain already-deleted rows).
+    /// Recording audio is parked in the trash for undo, same as
+    /// `delete_recording`.
+    pub fn delete_entries_bulk(
+        &mut self,
+        ws_id: &str,
+        item_ids: &[String],
+        recording_ids: &[String],
+    ) -> AppResult<usize> {
+        let mut count = 0usize;
+        let removed_files: Vec<String> = {
+            let data = self.workspace_data_mut(ws_id)?;
+            let before = data.items.len();
+            data.items.retain(|i| !item_ids.contains(&i.id));
+            count += before - data.items.len();
+
+            let before = data.recordings.len();
+            let mut files: Vec<String> = Vec::new();
+            data.recordings.retain(|r| {
+                if recording_ids.iter().any(|id| id == &r.id) {
+                    files.push(r.file.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+            count += before - data.recordings.len();
+            files
+        };
+        for file in &removed_files {
+            let source = self.recording_path(ws_id, file);
+            let trash_path = self.trash_dir().join(file);
+            if fs::create_dir_all(self.trash_dir()).is_ok() {
+                let _ = fs::rename(&source, &trash_path);
+            }
+        }
+        self.persist_workspace(ws_id);
+        Ok(count)
+    }
+
     // ------------------------------------------------------------- recordings
 
     pub fn save_recording(
@@ -699,7 +748,16 @@ impl Store {
             let rec = data.recordings.remove(pos);
             (rec.file, data.recordings.len())
         };
-        match fs::remove_file(self.recording_path(ws_id, &file)) {
+        // Park the audio in the trash instead of erasing it so an undo can
+        // restore the recording (the trash is wiped on next startup).
+        let source = self.recording_path(ws_id, &file);
+        let trash_path = self.trash_dir().join(&file);
+        let parked = match fs::create_dir_all(&trash_path.parent().unwrap_or(&self.trash_dir()))
+        {
+            Ok(()) => fs::rename(&source, &trash_path),
+            Err(e) => Err(e),
+        };
+        match parked {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => {
@@ -711,6 +769,44 @@ impl Store {
         }
         self.persist_workspace(ws_id);
         let _ = remaining;
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------- undo
+
+    /// Upsert a text item back with its original id and timestamps (a Ctrl+Z
+    /// restore, or the pre-edit snapshot of an edited item).
+    pub fn restore_item(&mut self, ws_id: &str, item: Item) -> AppResult<()> {
+        let data = self.workspace_data_mut(ws_id)?;
+        match data.items.iter_mut().find(|i| i.id == item.id) {
+            Some(slot) => *slot = item,
+            None => data.items.push(item),
+        }
+        self.persist_workspace(ws_id);
+        Ok(())
+    }
+
+    /// Restore a deleted recording: move its audio out of the trash and
+    /// upsert the metadata row.
+    pub fn restore_recording(&mut self, ws_id: &str, recording: Recording) -> AppResult<()> {
+        let parked = self.trash_dir().join(&recording.file);
+        let final_path = self.recording_path(ws_id, &recording.file);
+        if parked.is_file() {
+            fs::create_dir_all(self.voices_dir(ws_id))?;
+            fs::rename(&parked, &final_path).map_err(|e| {
+                AppError::Storage(format!("could not restore voice file: {e}"))
+            })?;
+        } else if !final_path.is_file() {
+            return Err(AppError::Storage(
+                "voice audio is no longer available".into(),
+            ));
+        }
+        let data = self.workspace_data_mut(ws_id)?;
+        match data.recordings.iter_mut().find(|r| r.id == recording.id) {
+            Some(slot) => *slot = recording,
+            None => data.recordings.push(recording),
+        }
+        self.persist_workspace(ws_id);
         Ok(())
     }
 
@@ -1100,7 +1196,7 @@ mod tests {
     }
 
     #[test]
-    fn recording_delete_removes_file() {
+    fn recording_delete_parks_audio_for_undo() {
         let (mut store, dir) = test_store();
         let ws = store.create_workspace("WS").unwrap();
         let rec = store
@@ -1110,6 +1206,11 @@ mod tests {
         assert!(path.exists());
         store.delete_recording(&ws.meta.id, &rec.id).unwrap();
         assert!(!path.exists());
+        // The audio is parked in the trash so an undo can restore it, and a
+        // restore puts it back at the original path.
+        let restored = store.restore_recording(&ws.meta.id, rec).unwrap();
+        assert!(path.exists());
+        let _ = restored;
         cleanup(&dir);
     }
 

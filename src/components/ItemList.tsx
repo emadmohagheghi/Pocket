@@ -5,10 +5,10 @@ import { Loader2, Mic, Pause, Play, Square, X } from "lucide-react";
 import { usePocket } from "@/store";
 import { api } from "@/lib/api";
 import { formatDuration } from "@/lib/utils";
-import { playPocketSound } from "@/lib/sound";
 import { toast } from "@/components/ui/toast";
 import { useRecorder } from "@/hooks/useRecorder";
 import type { Item, Recording } from "@/types";
+import type { UndoStep } from "@/store";
 import { ItemRow } from "@/components/ItemRow";
 import { VoiceRow } from "@/components/VoiceList";
 import { Button } from "@/components/ui/button";
@@ -102,7 +102,9 @@ export function ItemList() {
   const setEntryDone = usePocket((s) => s.setEntryDone);
   const updateItem = usePocket((s) => s.updateItem);
   const deleteItem = usePocket((s) => s.deleteItem);
-  const deleteRecording = usePocket((s) => s.deleteRecording);
+  const recordUndo = usePocket((s) => s.recordUndo);
+  const undo = usePocket((s) => s.undo);
+  const wsId = usePocket((s) => s.settings?.activeWorkspaceId ?? "");
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expandRequest, setExpandRequest] = useState<{ id: string; nonce: number } | null>(null);
@@ -166,32 +168,46 @@ export function ItemList() {
       void api
         .copyToClipboard(text)
         .then(() => {
-          playPocketSound("copy");
           toast.add({
             title: asList ? "Copied as List" : "Copied",
             type: "success",
           });
-        })
-        .catch(() => playPocketSound("error"));
+        });
     },
     [entries, selectedIds]
   );
 
   const toggleDoneSelected = useCallback(() => {
     if (selectedIds.size === 0) return;
-    let anyDone = false;
-    for (const entry of entries) {
-      if (!selectedIds.has(entry.key)) continue;
+    const selected = entries.filter((e) => selectedIds.has(e.key));
+    // Group semantics: if any selected entry is still undone, check them all;
+    // only when every selected entry is done do we uncheck them all.
+    const anyUndone = selected.some(
+      (e) => (e.kind === "text" ? !e.item.pinned : !e.recording.pinned)
+    );
+    const target = anyUndone;
+    const undoSteps: UndoStep[] = [];
+    for (const entry of selected) {
       const done = entry.kind === "text" ? entry.item.pinned : entry.recording.pinned;
-      if (!done) anyDone = true;
-      if (entry.kind === "text") setEntryDone("text", entry.item.id, !done);
-      else setEntryDone("voice", entry.recording.id, !done);
+      if (done === target) continue;
+      if (entry.kind === "text") {
+        undoSteps.push({ type: "restoreItem", workspaceId: wsId, item: entry.item });
+        setEntryDone("text", entry.item.id, target);
+      } else {
+        undoSteps.push({
+          type: "restoreRecording",
+          workspaceId: wsId,
+          recording: entry.recording,
+        });
+        setEntryDone("voice", entry.recording.id, target);
+      }
     }
+    if (undoSteps.length > 0) recordUndo(undoSteps);
     toast.add({
-      title: anyDone ? "Marked as Done" : "Marked as Not Done",
+      title: target ? "Marked as Done" : "Marked as Not Done",
       type: "success",
     });
-  }, [entries, selectedIds, setEntryDone]);
+  }, [entries, selectedIds, setEntryDone, recordUndo, wsId]);
 
   const requestEdit = useCallback((id: string) => {
     setEditRequest({ id, nonce: ++nonce.current });
@@ -210,24 +226,58 @@ export function ItemList() {
     // Oldest note is the merge target so its position in the feed holds.
     const ordered = [...selected].sort((a, b) => a.item.createdAt - b.item.createdAt);
     const merged = ordered.map((e) => e.item.content.trim()).join("\n\n");
-    void updateItem(ordered[0].item.id, { content: merged });
+    const undoSteps: UndoStep[] = ordered
+      .slice(1)
+      .map((e) => ({ type: "restoreItem", workspaceId: wsId, item: e.item }) as UndoStep);
+    const prevTarget = ordered[0].item;
+    void updateItem(ordered[0].item.id, { content: merged }).then(() => {
+      // updateItem records its own "restore previous" step; re-record the
+      // whole merge as one action so Ctrl+Z reverts everything at once.
+      usePocket.setState((s) => ({
+        undoHistory: [
+          ...s.undoHistory.slice(0, -1),
+          [
+            { type: "restoreItem", workspaceId: wsId, item: prevTarget } as UndoStep,
+            ...undoSteps,
+          ],
+        ],
+      }));
+    });
     for (const e of ordered.slice(1)) void deleteItem(e.item.id);
-    playPocketSound("success");
     toast.add({ title: "Notes Merged", type: "success" });
     setSelectedIds(new Set());
-  }, [entries, selectedIds, selectedTextIds, updateItem, deleteItem]);
+  }, [entries, selectedIds, selectedTextIds, updateItem, deleteItem, recordUndo, wsId]);
 
   const deleteSelected = useCallback(() => {
     if (selectedIds.size === 0) return;
-    playPocketSound("destructive");
+    const undoSteps: UndoStep[] = [];
+    const itemIds: string[] = [];
+    const recordingIds: string[] = [];
     for (const entry of entries) {
       if (!selectedIds.has(entry.key)) continue;
-      if (entry.kind === "text") void deleteItem(entry.item.id);
-      else void deleteRecording(entry.recording.id);
+      if (entry.kind === "text") {
+        undoSteps.push({ type: "restoreItem", workspaceId: wsId, item: entry.item });
+        itemIds.push(entry.item.id);
+      } else {
+        undoSteps.push({
+          type: "restoreRecording",
+          workspaceId: wsId,
+          recording: entry.recording,
+        });
+        recordingIds.push(entry.recording.id);
+      }
     }
-    toast.add({ title: "Deleted", type: "success" });
-    setSelectedIds(new Set());
-  }, [entries, selectedIds, deleteItem, deleteRecording]);
+    // One bulk call: per-item deletes would round-trip and persist once per
+    // entry, which visibly lags with hundreds of selected rows.
+    void api
+      .deleteEntriesBulk(wsId, itemIds, recordingIds)
+      .then(() => {
+        recordUndo(undoSteps);
+        toast.add({ title: "Deleted", type: "success" });
+        setSelectedIds(new Set());
+      })
+      .catch(() => toast.add({ title: "Delete failed", type: "error" }));
+  }, [entries, selectedIds, recordUndo, wsId]);
 
   const moveSelectedTo = useCallback(
     (workspaceId: string, workspaceName: string) => {
@@ -238,26 +288,33 @@ export function ItemList() {
           (e): e is { key: string; kind: "text"; item: Item } =>
             e.kind === "text" && selectedIds.has(e.key)
         );
+        const undoSteps: UndoStep[] = [];
         for (const e of moving) {
           try {
-            await api.createItem(workspaceId, {
+            undoSteps.push({ type: "restoreItem", workspaceId: wsId, item: e.item });
+            const created = await api.createItem(workspaceId, {
               itemType: "text",
               content: e.item.content,
               title: e.item.title,
               url: e.item.url,
             });
+            undoSteps.push({
+              type: "removeItem",
+              workspaceId,
+              itemId: created.id,
+            });
             await api.deleteItem(wsId, e.item.id);
           } catch {
-            playPocketSound("error");
+            toast.add({ title: "Move failed", type: "error" });
             return;
           }
         }
-        playPocketSound("success");
+        recordUndo(undoSteps);
         toast.add({ title: `Moved to ${workspaceName}`, type: "success" });
         setSelectedIds(new Set());
       })();
     },
-    [entries, selectedIds, selectedTextIds]
+    [entries, selectedIds, selectedTextIds, recordUndo]
   );
 
   // Bulk shortcuts: active whenever a selection exists and the user is not
@@ -287,6 +344,14 @@ export function ItemList() {
         clearSelection();
         return;
       }
+      if (mod && !e.shiftKey && (e.key === "z" || e.key === "Z")) {
+        // Ctrl+Z works even with no selection (e.g. undoing a capture).
+        e.preventDefault();
+        void undo().then((did) => {
+          if (did) toast.add({ title: "Undone", type: "success" });
+        });
+        return;
+      }
       if (selectedIds.size === 0) return;
       if (mod && !e.shiftKey && (e.key === "c" || e.key === "C")) {
         e.preventDefault();
@@ -300,6 +365,9 @@ export function ItemList() {
       } else if (e.key === " ") {
         e.preventDefault();
         toggleDoneSelected();
+      } else if (e.key === "Delete") {
+        e.preventDefault();
+        deleteSelected();
       } else if (e.key === "Enter" && selectedTextIds.length === 1) {
         e.preventDefault();
         requestEdit(selectedTextIds[0]);
@@ -318,6 +386,8 @@ export function ItemList() {
     toggleDoneSelected,
     requestEdit,
     clearSelection,
+    deleteSelected,
+    undo,
   ]);
 
   const actions: FeedActions = {
@@ -400,35 +470,9 @@ export function AddBar() {
     const created = await createItem(text);
     if (created) {
       setValue("");
-      playPocketSound("success");
       textareaRef.current?.focus();
     }
   };
-
-  // Native double-shift hold lands here: start on press, save on release.
-  // Refs keep the listeners stable while the recorder state churns.
-  const recorderSnapshotRef = useRef(recorder);
-  recorderSnapshotRef.current = recorder;
-  const stopAndSaveRef = useRef<() => Promise<void>>(async () => {});
-  useEffect(() => {
-    const onStart = () => {
-      const r = recorderSnapshotRef.current;
-      if (!r.recording && !r.paused && !r.isBusy()) {
-        playPocketSound("tap");
-        void r.start();
-      }
-    };
-    const onStop = () => {
-      const r = recorderSnapshotRef.current;
-      if (r.recording) void stopAndSaveRef.current();
-    };
-    window.addEventListener("pocket-voice-hold-start", onStart);
-    window.addEventListener("pocket-voice-hold-stop", onStop);
-    return () => {
-      window.removeEventListener("pocket-voice-hold-start", onStart);
-      window.removeEventListener("pocket-voice-hold-stop", onStop);
-    };
-  }, []);
 
   const stopAndSaveVoice = async () => {
     // Optimistic flag keeps the bar in voice mode across the stop() gap.
@@ -437,21 +481,27 @@ export function AddBar() {
       const result = await recorder.stop();
       if (!result || result.blob.size === 0) return;
       const buffer = await result.blob.arrayBuffer();
-      await api.saveRecording(
+      const saved = await api.saveRecording(
         activeWorkspaceId ?? "",
         `Voice note ${new Date().toLocaleString()}`,
         result.durationMs,
         buffer
       );
-      playPocketSound("success");
+      usePocket
+        .getState()
+        .recordUndo([
+          {
+            type: "removeRecording",
+            workspaceId: activeWorkspaceId ?? "",
+            recordingId: saved.id,
+          },
+        ]);
     } catch (error) {
       void api.log(`voice AddBar save FAILED: ${error}`);
-      playPocketSound("error");
     } finally {
       setSavingVoice(false);
     }
   };
-  stopAndSaveRef.current = stopAndSaveVoice;
 
   return (
     // Clicks in the capture bar focus the textarea instead of dragging the
@@ -533,7 +583,6 @@ export function AddBar() {
                   aria-label="Discard recording"
                   onClick={() => {
                     recorder.cancel();
-                    playPocketSound("close");
                   }}
                 >
                   <X />
@@ -585,8 +634,6 @@ export function AddBar() {
           <button
             type="button"
             onClick={() => {
-              playPocketSound("open");
-              playPocketSound("tap");
               void recorder.start();
             }}
             aria-label="Record a voice note"
