@@ -1,13 +1,18 @@
-// Vendored from Tauri's built-in drag-region script
-// (tauri/src/window/scripts/drag.js in the Tauri repository).
+// Window dragging for the frameless windows (main + quick-capture).
 //
-// Tauri (>= 2.x, e.g. 2.11.5) ALSO injects its own copy of this script into
-// every webview via the window plugin's init script. That stock copy runs
-// before any page script and calls stopImmediatePropagation(), so it would
-// swallow this module entirely — reintroducing the bugs fixed here (inputs
-// never blurring, scrollbar grabs dragging the window). To win the race this
-// module registers its mousedown listener in the CAPTURE phase: it always runs
-// first, handles the drag itself, and blocks the stock copy when needed.
+// Vendored from Tauri's built-in drag-region script
+// (tauri/src/window/scripts/drag.js in the Tauri repository) and heavily
+// adapted. Stock Tauri only drags from elements that opt in with
+// data-tauri-drag-region — after the redesign that left only thin empty
+// strips of the window draggable. This version flips the model: EVERYTHING
+// drags the window by default, and interactive elements (buttons, fields,
+// links, floating menus) opt out on their own, so layouts need no markers.
+//
+// It also wins the race against Tauri's stock copy of the script (injected
+// as an init script into every webview before any page script): that copy
+// has no scrollbar guard and freezes input focus, so this module registers
+// its mousedown listener in the CAPTURE phase and blocks the stock copy
+// whenever it handles a press itself.
 //
 // Original license headers preserved:
 //
@@ -24,13 +29,8 @@ declare global {
 }
 
 ;(function () {
-  //-----------------------//
-  // drag on mousedown and maximize on double click on Windows and Linux
-  // while macOS maximization should be on mouseup and if the mouse
-  // moves after the double click, it should be cancelled (see https://github.com/tauri-apps/tauri/issues/8306)
-  //-----------------------//
   const TAURI_DRAG_REGION_ATTR = 'data-tauri-drag-region'
-  const CLICKABLE_TAGS = new Set([
+  const INTERACTIVE_TAGS = new Set([
     'A',
     'BUTTON',
     'INPUT',
@@ -43,52 +43,59 @@ declare global {
     'button',
     'link',
     'menuitem',
+    'menuitemcheckbox',
+    'menuitemradio',
+    'menu',
     'tab',
     'checkbox',
     'radio',
     'switch',
-    'option'
+    'option',
+    'combobox',
+    'listbox',
+    'textbox',
+    'searchbox',
+    'slider',
+    'scrollbar'
   ])
+  // Radix portals floating panels (menus, selects, popovers) into a fixed
+  // wrapper outside the app tree. Their items are interactive and would
+  // block dragging anyway; this check also covers panel padding.
+  const FLOATING_PANEL_SELECTOR = '[data-radix-popper-content-wrapper]'
 
-  function isClickableElement(el: HTMLElement): boolean {
+  function isInteractive(el: HTMLElement): boolean {
     return (
-      CLICKABLE_TAGS.has(el.tagName) ||
+      INTERACTIVE_TAGS.has(el.tagName) ||
       (el.hasAttribute('contenteditable') &&
         el.getAttribute('contenteditable') !== 'false') ||
-      (el.hasAttribute('tabindex') && el.getAttribute('tabindex') !== '-1') ||
       INTERACTIVE_ROLES.has(el.getAttribute('role') || '')
     )
   }
 
-  // Walk the composed path from target upward.
+  // Walk the composed path from the mousedown target to the root; the first
+  // deciding element wins:
   //
-  // Supported values for data-tauri-drag-region:
-  //   (bare / no value / "true") -> self: only direct clicks on this element trigger drag
-  //   "deep"                   -> deep: clicks anywhere in the subtree trigger drag
-  //   "false"                  -> disabled: drag is blocked here (and for ancestors)
-  //
-  // Clickable elements (buttons, links, etc.) normally block dragging,
-  // but if they themselves carry data-tauri-drag-region they act as drag regions.
-  function isDragRegion(composedPath: EventTarget[]): boolean {
+  //   data-tauri-drag-region="false"  → never drag (sticky for the subtree)
+  //   Radix floating panel            → never drag
+  //   data-tauri-drag-region (truthy) → explicit drag region; also opts in
+  //                                     to double-click maximize
+  //   interactive element or ancestor → buttons, fields, links… never drag
+  //   anything else                   → drags the window
+  function decideDrag(composedPath: EventTarget[]): {
+    drag: boolean
+    explicit: boolean
+  } {
     for (const target of composedPath) {
       if (!(target instanceof HTMLElement)) continue
-      const el = target as HTMLElement
-
+      const el = target
       const attr = el.getAttribute(TAURI_DRAG_REGION_ATTR)
-
-      // clickable without explicit drag region → blocks drag
-      if (isClickableElement(el) && attr === null) return false
-      // no attr → keep walking up
-      if (attr === null) continue
-      // explicitly disabled
-      if (attr === 'false') return false
-      // subtree drag — any descendant triggers
-      if (attr === 'deep') return true
-      // bare or "true" attr — only direct clicks on this element
-      if (attr === '' || attr === 'true') return el === composedPath[0]
+      if (attr === 'false') return { drag: false, explicit: false }
+      if (el.matches(FLOATING_PANEL_SELECTOR)) return { drag: false, explicit: false }
+      if (attr !== null) return { drag: true, explicit: true }
+      if (isInteractive(el)) return { drag: false, explicit: false }
     }
-
-    return false
+    // Default: every non-interactive press drags the window.
+    return { drag: true, explicit: false }
   }
 
   // Native scrollbars are not elements: a mousedown on a scrollbar thumb or
@@ -139,13 +146,14 @@ declare global {
         e.stopImmediatePropagation()
         return
       }
+      const { drag, explicit } = decideDrag(path)
       if (
         // was left mouse button
         e.button === 0 &&
         // and was normal click to drag or double click to maximize
         (e.detail === 1 || e.detail === 2) &&
-        // and is drag region
-        isDragRegion(path)
+        // and is draggable
+        drag
       ) {
         // macOS maximization happens on `mouseup`,
         // so we save needed state and early return
@@ -155,24 +163,29 @@ declare global {
           return
         }
 
-        // Clicking window chrome must release focus explicitly: the
-        // preventDefault() below freezes focus in place, so without this an
-        // input keeps its caret (and focus ring) when clicking elsewhere.
-        // Mousedowns on fields never reach here — fields block dragging.
+        // Clicking window chrome must release focus explicitly: an input
+        // would otherwise keep its caret (and focus ring) when clicking
+        // elsewhere. Presses on interactive elements never reach here.
         const active = document.activeElement
         if (active instanceof HTMLElement && active !== e.target) active.blur()
 
-        // prevents text cursor
-        e.preventDefault()
+        // Explicit regions keep the stock script's text-cursor prevention;
+        // default regions skip it so plain clicks still move focus (e.g. a
+        // feed row must receive focus to keep its keyboard flow alive).
+        if (explicit) e.preventDefault()
 
-        // fix #2549: double click on drag region edge causes content to maximize without window sizing change
-        // https://github.com/tauri-apps/tauri/issues/2549#issuecomment-1250036908
         // Also blocks Tauri's stock drag script from handling the same event.
         e.stopImmediatePropagation()
 
-        // start dragging if the element has a `tauri-drag-region` data attribute and maximize on double-clicking it
-        const cmd = e.detail === 2 ? 'internal_toggle_maximize' : 'start_dragging'
-        void window.__TAURI_INTERNALS__.invoke('plugin:window|' + cmd)
+        // Explicit regions maximize on double-click; default regions just
+        // drag — the windows are fixed-size, so maximizing from anywhere
+        // would be surprising.
+        const cmd =
+          explicit && e.detail === 2 ? 'internal_toggle_maximize' : 'start_dragging'
+        const internals = window.__TAURI_INTERNALS__
+        if (internals) {
+          void internals.invoke('plugin:window|' + cmd).catch(() => {})
+        }
       }
     },
     true
@@ -192,12 +205,13 @@ declare global {
         e.clientY === initialY &&
         // and not on a scrollbar
         !isOnScrollbar(e, e.composedPath()) &&
-        // and the event path contains a drag region (with no clickable element in between)
-        isDragRegion(e.composedPath())
+        // and the press landed in an explicit drag region
+        decideDrag(e.composedPath()).explicit
       ) {
-        void window.__TAURI_INTERNALS__.invoke(
-          'plugin:window|internal_toggle_maximize'
-        )
+        const internals = window.__TAURI_INTERNALS__
+        if (internals) {
+          void internals.invoke('plugin:window|internal_toggle_maximize').catch(() => {})
+        }
       }
     })
   }

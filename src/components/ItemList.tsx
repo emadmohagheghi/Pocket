@@ -454,8 +454,8 @@ export function AddBar() {
   stopAndSaveRef.current = stopAndSaveVoice;
 
   return (
-    // The composer opts out of the background drag region: clicking anywhere
-    // in the capture bar focuses the field, never moves the window.
+    // Clicks in the capture bar focus the textarea instead of dragging the
+    // window, so the bar opts out of the default whole-window dragging.
     <form
       data-tauri-drag-region="false"
       onSubmit={(event) => {

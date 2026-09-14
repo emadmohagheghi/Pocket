@@ -220,7 +220,6 @@ export default function QuickCaptureWindow() {
 
   return (
     <div
-      data-tauri-drag-region="deep"
       className="relative flex h-screen items-center gap-4 overflow-hidden rounded-3xl border border-border/60 bg-background py-3 pl-4 pr-5"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -229,8 +228,8 @@ export default function QuickCaptureWindow() {
         }
       }}
     >
-      {/* The panel background is the drag region; the control buttons block
-          dragging on their own via the vendored drag-region script. */}
+      {/* The panel is draggable everywhere by default; the control buttons
+          opt out on their own via the vendored drag-region script. */}
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-3">
         <QcStatusHeader
           savedFlash={savedFlash}

@@ -440,12 +440,9 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         closeButtonClassName="right-4 top-4"
         className="inset-3 flex h-auto w-auto max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-[36px] bg-background p-0 sm:max-w-none"
       >
-        {/* Dialog title bar doubles as the window drag handle: the heading
-            text drags, the close button stays clickable. */}
-        <DialogHeader
-          data-tauri-drag-region="deep"
-          className="shrink-0 border-b px-5 pb-3 pt-4"
-        >
+        {/* The dialog is draggable everywhere by default (lib/drag-region.ts);
+            the close button and interactive rows opt out on their own. */}
+        <DialogHeader className="shrink-0 border-b px-5 pb-3 pt-4">
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
         <div className="scroll-fade min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-3">

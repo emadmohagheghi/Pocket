@@ -165,16 +165,12 @@ export default function MainWindow() {
 
   return (
     <div className="relative h-screen bg-transparent p-3">
-      {/* The #1E1E1E application background itself is the window drag
-            region: any empty part of it moves the window. Interactive
-            children opt out — clickables (search, buttons, rows) block
-            dragging via the vendored drag-region script, and the feed plus
-            the composer explicitly carry data-tauri-drag-region="false" so
-            text selection, waveform scrubbing and typing never drag. */}
-      <div
-        data-tauri-drag-region="deep"
-        className="flex h-full flex-col overflow-hidden rounded-[36px] border border-border/60 bg-background"
-      >
+      {/* The whole window is draggable by default (see lib/drag-region.ts):
+            any press outside an interactive element moves the window, so the
+            app background, feed gaps and bar padding all drag. Buttons,
+            fields and floating menus opt out on their own — no markers
+            needed here. */}
+      <div className="flex h-full flex-col overflow-hidden rounded-[36px] border border-border/60 bg-background">
         {/* Top bar: search + overflow menu. */}
         <div className="flex items-center gap-2 px-3 pt-3">
           <SearchBar inputRef={searchInputRef} />

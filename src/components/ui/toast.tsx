@@ -58,6 +58,8 @@ function Toast({ className, ...props }: ToastPrimitive.Root.Props) {
   return (
     <ToastPrimitive.Root
       data-slot="toast"
+      // Portal content: toasts are swipeable, never window-draggable.
+      data-tauri-drag-region="false"
       className={cn(
         "group/toast pointer-events-auto absolute right-0 bottom-0 left-0 z-[calc(1000-var(--toast-index))] mx-auto w-fit origin-bottom rounded-3xl border border-border/60 bg-popover/60 text-popover-foreground shadow-lg backdrop-blur-2xl will-change-transform outline-none select-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
         "[--gap:0.75rem] [--height:var(--toast-frontmost-height,var(--toast-height))] [--offset-y:calc(var(--toast-offset-y)*-1+calc(var(--toast-index)*var(--gap)*-1)+var(--toast-swipe-movement-y))] [--peek:0.75rem] [--scale:calc(max(0,1-(var(--toast-index)*0.1)))] [--shrink:calc(1-var(--scale))]",

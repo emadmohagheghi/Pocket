@@ -322,8 +322,8 @@ export function ItemRow({
   return (
     <ContextMenu onOpenChange={(open) => setMenuOpen(open)}>
       <ContextMenuTrigger asChild>
-        {/* Rows opt out of the background drag region: plain click
-            selects, text is selectable, and edit fields live here. */}
+        {/* Rows opt out of whole-window dragging: plain click selects,
+            text is selectable, and edit fields live here. */}
         <li
           ref={rowRef}
           tabIndex={0}
