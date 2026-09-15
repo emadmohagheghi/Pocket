@@ -329,8 +329,11 @@ export function ItemList() {
       )
         return;
       const mod = e.ctrlKey || e.metaKey;
+      // Physical-key matching (e.code) keeps shortcuts working on every
+      // keyboard layout — on Persian/Arabic/Russian layouts e.key holds the
+      // layout character (e.g. "ک"), never the Latin letter.
       // Ctrl+A toggles select-all / deselect-all; Ctrl+D always deselects.
-      if (mod && !e.shiftKey && (e.key === "a" || e.key === "A")) {
+      if (mod && !e.shiftKey && e.code === "KeyA") {
         e.preventDefault();
         if (entries.length > 0 && selectedIds.size === entries.length) {
           clearSelection();
@@ -339,12 +342,12 @@ export function ItemList() {
         }
         return;
       }
-      if (mod && !e.shiftKey && (e.key === "d" || e.key === "D")) {
+      if (mod && !e.shiftKey && e.code === "KeyD") {
         e.preventDefault();
         clearSelection();
         return;
       }
-      if (mod && !e.shiftKey && (e.key === "z" || e.key === "Z")) {
+      if (mod && !e.shiftKey && e.code === "KeyZ") {
         // Ctrl+Z works even with no selection (e.g. undoing a capture).
         e.preventDefault();
         void undo().then((did) => {
@@ -353,25 +356,25 @@ export function ItemList() {
         return;
       }
       if (selectedIds.size === 0) return;
-      if (mod && !e.shiftKey && (e.key === "c" || e.key === "C")) {
+      if (mod && !e.shiftKey && e.code === "KeyC") {
         e.preventDefault();
         copySelected(false);
-      } else if (mod && e.shiftKey && (e.key === "c" || e.key === "C")) {
+      } else if (mod && e.shiftKey && e.code === "KeyC") {
         e.preventDefault();
         copySelected(true);
-      } else if (mod && e.shiftKey && (e.key === "m" || e.key === "M")) {
+      } else if (mod && e.shiftKey && e.code === "KeyM") {
         e.preventDefault();
         mergeSelected();
-      } else if (e.key === " ") {
+      } else if (e.code === "Space") {
         e.preventDefault();
         toggleDoneSelected();
-      } else if (e.key === "Delete") {
+      } else if (e.code === "Delete") {
         e.preventDefault();
         deleteSelected();
-      } else if (e.key === "Enter" && selectedTextIds.length === 1) {
+      } else if (e.code === "Enter" && selectedTextIds.length === 1) {
         e.preventDefault();
         requestEdit(selectedTextIds[0]);
-      } else if (e.key === "Escape") {
+      } else if (e.code === "Escape") {
         clearSelection();
       }
     };

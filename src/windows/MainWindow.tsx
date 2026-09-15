@@ -138,36 +138,38 @@ export default function MainWindow() {
       const target = e.target as HTMLElement;
       const typing =
         target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
-      if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K")) {
+      // Physical-key matching (e.code) keeps shortcuts working on every
+      // keyboard layout — on Persian/Arabic/Russian layouts e.key holds the
+      // layout character (e.g. "ک"), never the Latin letter.
+      if (e.ctrlKey && !e.altKey && !e.shiftKey && e.code === "KeyK") {
         // Ctrl+K — focus the persistent search field.
         e.preventDefault();
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
-      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === "," || e.code === "Comma")) {
+      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && e.code === "Comma") {
         // Ctrl+, — Settings (VS Code convention).
         e.preventDefault();
         openSettings();
       } else if (e.ctrlKey && e.shiftKey && !e.altKey) {
         // Overflow-menu shortcuts — same actions as the three-dot items,
         // available whenever the app window itself has keyboard focus.
-        const key = e.key.toLowerCase();
-        if (key === "t") {
+        if (e.code === "KeyT") {
           e.preventDefault();
           toggleStayOnTop();
-        } else if (key === "w") {
+        } else if (e.code === "KeyW") {
           e.preventDefault();
           openWorkspaces();
-        } else if (key === "s") {
+        } else if (e.code === "KeyS") {
           e.preventDefault();
           openSettings();
-        } else if (key === "o") {
+        } else if (e.code === "KeyO") {
           e.preventDefault();
           openDataFolder();
-        } else if (key === "q") {
+        } else if (e.code === "KeyQ") {
           e.preventDefault();
           closeWindow();
         }
-      } else if (e.key === "Escape" && !typing) {
+      } else if (e.code === "Escape" && !typing) {
         setSettingsOpen(false);
         setWorkspacesOpen(false);
       }

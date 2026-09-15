@@ -1,36 +1,39 @@
 # Pocket
 
-Pocket is a lightweight, privacy-first Windows companion for capturing selected
-text and voice notes without leaving your current workflow.
+Pocket is a lightweight, privacy-first companion app for Windows and Linux for
+capturing selected text and voice notes without leaving your current workflow.
 
 It is built with Rust, Tauri v2, React, TypeScript, shadcn/ui, and Tailwind CSS.
-Pocket is currently in early development and its release builds target Windows
-x64.
+Pocket is currently in early development. Release builds target Windows x64
+(NSIS installer) and Linux x64 (`.deb` and `.AppImage`).
 
 ## Features
 
-- Capture selected text from any application with a double press of Left Shift.
-- Record voice notes from the main window, quick-capture panel, or system tray.
-- Use Right Shift as push-to-record: double press, hold to record, and release to
-  save.
+- Capture selected text from any application with a double press of Left Shift
+  (Windows). The text is saved straight into the active workspace — no window
+  opens; a brief on-screen confirmation is shown instead.
+- Record voice notes from the main window or the system tray.
 - Organize text and recordings into independent workspaces.
 - Search the active workspace as you type.
-- Pin important text and voice notes.
+- Mark text and voice notes as done, todo-style.
+- Select multiple entries to copy them, copy them as a numbered list, merge
+  text notes, or delete them — with undo.
 - Export and import complete backup archives, including audio files.
-- Keep all application data local, with no account, cloud service, telemetry, or
-  advertising.
+- Optionally start Pocket automatically at login.
+- Keep all application data local, with no account, cloud service, telemetry,
+  or advertising.
 
 ## Privacy-sensitive behavior
 
-Pocket uses a Windows low-level keyboard hook to recognize the Left Shift and
-Right Shift capture gestures. Key contents are not logged, stored, or sent over
-the network. The hook only keeps the timing and side of Shift presses and
-whether another key interrupted the gesture.
+Pocket uses a Windows low-level keyboard hook to recognize the double-Left-Shift
+capture gesture. Key contents are not logged, stored, or sent over the network.
+The hook only keeps the timing and side of Shift presses and whether another
+key interrupted the gesture.
 
-When the Left Shift text-capture gesture is used, Pocket temporarily uses the
-Windows clipboard to copy the text currently selected in the foreground
-application. This action replaces the clipboard's previous contents. The
-captured text is saved locally only when the selection is non-empty.
+When the text-capture gesture is used, Pocket temporarily uses the Windows
+clipboard to copy the text currently selected in the foreground application.
+This action replaces the clipboard's previous contents. The captured text is
+saved locally only when the selection is non-empty.
 
 Microphone access is used only for a recording explicitly started by the user.
 Voice recordings remain on the local machine unless the user chooses to export
@@ -38,22 +41,19 @@ a backup.
 
 See the full [Privacy Policy](PRIVACY.md) and [Security Policy](SECURITY.md).
 
-## Keyboard controls
+## Capture gesture
 
-| Action | Default control |
-| --- | --- |
-| Capture selected text | Double press Left Shift |
-| Open voice capture | Double press Left Shift and hold the second press |
-| Push-to-record voice | Double press Right Shift, hold, then release to save |
-| Focus search | `Ctrl+K` |
-| Save text from the main add bar | `Enter` |
-| Cancel the voice-capture panel | `Esc` |
+Press Left Shift twice, in any application, to save the selected text straight
+into the active workspace (Windows only). In-app shortcuts are shown next to
+their actions in the app's menu. All shortcuts match physical keys, so they
+work on any keyboard layout.
 
 ## Installation
 
-Official Windows installers are published on the GitHub Releases page. Pocket
-currently produces an NSIS `.exe` installer for the current user and an `.msi`
-installer that may require administrator access.
+Official installers are published on the GitHub Releases page:
+
+- Windows: an NSIS `.exe` installer for the current user.
+- Linux: a `.deb` package (Debian/Ubuntu) and a portable `.AppImage`.
 
 Release artifacts are currently unsigned while the project prepares its
 application to SignPath Foundation. Windows SmartScreen may therefore display
@@ -81,10 +81,10 @@ local protocol that only exposes recordings registered in workspace metadata.
 
 Requirements:
 
-- Windows 10 or Windows 11 x64
+- Windows 10/11 x64 or Linux x64
 - Node.js and pnpm
-- Rust stable with the MSVC toolchain
-- Microsoft Edge WebView2 Runtime
+- Rust stable (MSVC toolchain on Windows)
+- Microsoft Edge WebView2 Runtime (Windows) or `libwebkit2gtk-4.1` (Linux)
 
 ```powershell
 pnpm install
@@ -110,7 +110,9 @@ official artifacts must be treated as unsigned.
 ## Credits
 
 Pocket's capture concept and visual design are inspired by
-[Copper](https://shadcn.com/copper), shadcn's capture app for macOS.
+[Copper](https://shadcn.com/copper), shadcn's capture app for macOS. Pocket is
+an independent implementation focused on Windows and Linux and is not
+affiliated with shadcn.
 
 ## License
 
