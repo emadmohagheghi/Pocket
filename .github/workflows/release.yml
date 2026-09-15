@@ -105,9 +105,15 @@ jobs:
             TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')"
           fi
           echo "Uploading to release $TAG"
-          # Upload only known installer extensions — never a bare glob.
-          gh release upload "$TAG" \
-            release-assets/*.exe \
-            release-assets/*.deb \
-            release-assets/*.AppImage \
-            --repo "$GITHUB_REPOSITORY" --clobber
+          # Each platform job produces a different bundle type, so pass only
+          # files that actually exist: under bash's default (non-nullglob)
+          # behavior an unmatched glob like release-assets/*.deb on the
+          # Windows runner stays a literal string and makes gh fail.
+          shopt -s nullglob
+          files=(release-assets/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No release assets staged" >&2
+            exit 1
+          fi
+          ls -l "${files[@]}"
+          gh release upload "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
