@@ -75,14 +75,17 @@ jobs:
       - name: Collect bundle artifacts
         shell: bash
         run: |
-          mkdir -p dist
+          # A dedicated staging directory: dist/ is Vite's output dir and must
+          # never be uploaded — its files/dirs made `gh release upload`
+          # fail (and junk reached the v0.2.3 release).
+          mkdir -p release-assets
           found=false
           for f in \
             src-tauri/target/release/bundle/nsis/*.exe \
             src-tauri/target/release/bundle/deb/*.deb \
             src-tauri/target/release/bundle/appimage/*.AppImage; do
             if [ -e "$f" ]; then
-              cp "$f" dist/
+              cp "$f" release-assets/
               found=true
             fi
           done
@@ -90,7 +93,7 @@ jobs:
             echo "No bundles found" >&2
             exit 1
           fi
-          ls -l dist
+          ls -l release-assets
 
       - name: Upload assets to release
         shell: bash
@@ -102,4 +105,9 @@ jobs:
             TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')"
           fi
           echo "Uploading to release $TAG"
-          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          # Upload only known installer extensions — never a bare glob.
+          gh release upload "$TAG" \
+            release-assets/*.exe \
+            release-assets/*.deb \
+            release-assets/*.AppImage \
+            --repo "$GITHUB_REPOSITORY" --clobber
