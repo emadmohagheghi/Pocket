@@ -75,14 +75,17 @@ jobs:
       - name: Collect bundle artifacts
         shell: bash
         run: |
-          mkdir -p dist
+          # A dedicated staging directory: dist/ is Vite's output dir and must
+          # never be uploaded — its files/dirs made `gh release upload`
+          # fail (and junk reached the v0.2.3 release).
+          mkdir -p release-assets
           found=false
           for f in \
             src-tauri/target/release/bundle/nsis/*.exe \
             src-tauri/target/release/bundle/deb/*.deb \
             src-tauri/target/release/bundle/appimage/*.AppImage; do
             if [ -e "$f" ]; then
-              cp "$f" dist/
+              cp "$f" release-assets/
               found=true
             fi
           done
@@ -90,7 +93,7 @@ jobs:
             echo "No bundles found" >&2
             exit 1
           fi
-          ls -l dist
+          ls -l release-assets
 
       - name: Upload assets to release
         shell: bash
@@ -102,4 +105,15 @@ jobs:
             TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')"
           fi
           echo "Uploading to release $TAG"
-          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          # Each platform job produces a different bundle type, so pass only
+          # files that actually exist: under bash's default (non-nullglob)
+          # behavior an unmatched glob like release-assets/*.deb on the
+          # Windows runner stays a literal string and makes gh fail.
+          shopt -s nullglob
+          files=(release-assets/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No release assets staged" >&2
+            exit 1
+          fi
+          ls -l "${files[@]}"
+          gh release upload "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
